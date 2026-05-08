@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HeatmapMode, JourneyEvent, Manifest, MatchPayload, Toggles } from "./types";
-import { MAP_SIZE, MIN_ZOOM, MAX_ZOOM } from "./constants";
+import { MAP_SIZE, MIN_ZOOM, MAX_ZOOM, HEATMAP_OPTIONS } from "./constants";
 import { clamp, normalizeDegrees, shortestAngleDelta } from "./utils";
 import { drawPaths, drawCurrentPositions, drawEvents, drawCachedHeatmap } from "./lib/canvas";
 import { parseUploadedDataset } from "./lib/dataset";
@@ -9,11 +9,16 @@ import { Topbar } from "./components/Topbar";
 import { MapToolsPanel } from "./components/MapToolsPanel";
 import { PlaybackPanel } from "./components/PlaybackPanel";
 import { EventInfoCard } from "./components/EventInfoCard";
+import { LegendPanel } from "./components/LegendPanel";
+
+// ... skipping to the render ...
+// NOTE: I am providing the replacement specifically around the topbar to insert the layers.
 
 export function App() {
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [match, setMatch] = useState<MatchPayload | null>(null);
   const [uploadedDataset, setUploadedDataset] = useState<{ manifest: Manifest; matches: Map<string, MatchPayload> } | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadStatus, setUploadStatus] = useState("Bundled dataset loaded from public/data.");
   const [selectedMap, setSelectedMap] = useState("AmbroseValley");
   const [selectedDate, setSelectedDate] = useState("all");
@@ -27,6 +32,8 @@ export function App() {
   const [showLayerPanel, setShowLayerPanel] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showMobileSheet, setShowMobileSheet] = useState(false);
+  const [showLegendPanel, setShowLegendPanel] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [themeMode, setThemeMode] = useState<"light" | "dark">("dark");
   const [timelineVisible, setTimelineVisible] = useState(false);
   const [mapView, setMapView] = useState({ zoom: 3, rotation: 0, x: 0, y: 0 });
@@ -35,7 +42,6 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const heatmapCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null }>({ key: "", canvas: null });
   const mapShellRef = useRef<HTMLDivElement | null>(null);
-  const folderInputRef = useRef<HTMLInputElement | null>(null);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
   const timelineDragRef = useRef<number | null>(null);
   const compassDragRef = useRef<number | null>(null);
@@ -76,11 +82,6 @@ export function App() {
   useEffect(() => {
     loadBundledDataset();
   }, [loadBundledDataset]);
-
-  useEffect(() => {
-    folderInputRef.current?.setAttribute("webkitdirectory", "");
-    folderInputRef.current?.setAttribute("directory", "");
-  }, []);
 
   const filteredMatches = useMemo(() => {
     if (!manifest) return [];
@@ -128,9 +129,12 @@ export function App() {
   const handleUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     if (!files.length) return;
-    setUploadStatus(`Reading ${files.length} uploaded files...`);
+    
+    const allFiles = [...uploadedFiles, ...files];
+    setUploadedFiles(allFiles);
+    setUploadStatus(`Reading ${allFiles.length} uploaded files...`);
     try {
-      const dataset = await parseUploadedDataset(files);
+      const dataset = await parseUploadedDataset(allFiles);
       setUploadedDataset(dataset);
       applyManifest(dataset.manifest);
       setMatch(null);
@@ -142,7 +146,103 @@ export function App() {
     } finally {
       event.target.value = "";
     }
-  }, [applyManifest]);
+  }, [applyManifest, uploadedFiles]);
+
+  const handleResetWorkspace = useCallback(() => {
+    setManifest(null);
+    setMatch(null);
+    setUploadedDataset(null);
+    setUploadedFiles([]);
+    setSelectedMatchKey("");
+    setTime(0);
+    setPlaying(false);
+    setUploadStatus("Workspace reset. Drag and drop .nakama-0 files to begin.");
+  }, []);
+
+  const handleDeleteMatch = useCallback(() => {
+    if (!selectedMatchKey || !manifest) return;
+
+    const newMatches = manifest.matches.filter(m => m.key !== selectedMatchKey);
+    const newManifest = { ...manifest, matches: newMatches };
+    
+    if (uploadedDataset) {
+      const newDatasetMatches = new Map(uploadedDataset.matches);
+      newDatasetMatches.delete(selectedMatchKey);
+      setUploadedDataset({
+        manifest: newManifest,
+        matches: newDatasetMatches
+      });
+    }
+
+    setManifest(newManifest);
+    setMatch(null);
+    setTime(0);
+    setPlaying(false);
+    
+    if (newMatches.length > 0) {
+      setSelectedMatchKey(newMatches[0].key);
+    } else {
+      setSelectedMatchKey("");
+    }
+  }, [manifest, selectedMatchKey, uploadedDataset]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback(async (event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDragging(false);
+
+    const getFilesFromEntry = async (entry: any): Promise<File[]> => {
+      if (entry.isFile) {
+        return new Promise((resolve) => entry.file(resolve));
+      } else if (entry.isDirectory) {
+        const dirReader = entry.createReader();
+        const entries = await new Promise<any[]>((resolve) => {
+          dirReader.readEntries(resolve);
+        });
+        const filesPromises = entries.map(getFilesFromEntry);
+        const filesArrays = await Promise.all(filesPromises);
+        return filesArrays.flat();
+      }
+      return [];
+    };
+
+    const items = Array.from(event.dataTransfer.items);
+    let files: File[] = [];
+
+    if (items.some(i => i.webkitGetAsEntry)) {
+      const entries = items.map(i => i.webkitGetAsEntry()).filter(Boolean);
+      const filesPromises = entries.map(getFilesFromEntry);
+      const filesArrays = await Promise.all(filesPromises);
+      files = filesArrays.flat();
+    } else {
+      files = Array.from(event.dataTransfer.files);
+    }
+
+    if (!files.length) return;
+    const allFiles = [...uploadedFiles, ...files];
+    setUploadedFiles(allFiles);
+    setUploadStatus(`Reading ${allFiles.length} dropped files...`);
+    try {
+      const dataset = await parseUploadedDataset(allFiles);
+      setUploadedDataset(dataset);
+      applyManifest(dataset.manifest);
+      setMatch(null);
+      setTime(0);
+      setPlaying(false);
+      setUploadStatus(`Upload loaded: ${dataset.manifest.matches.length} matches.`);
+    } catch (error) {
+      setUploadStatus(error instanceof Error ? error.message : "Could not read dropped dataset.");
+    }
+  }, [applyManifest, uploadedFiles]);
 
   const selectedSummary = useMemo(
     () => manifest?.matches.find((item) => item.key === selectedMatchKey),
@@ -242,7 +342,12 @@ export function App() {
     };
   }, [draw]);
 
-  const mapImage = manifest?.maps.find((item) => item.id === selectedMap)?.image;
+  const DEFAULT_MAP_IMAGES: Record<string, string> = {
+    AmbroseValley: "AmbroseValley_Minimap.png",
+    GrandRift: "GrandRift_Minimap.png",
+    Lockdown: "Lockdown_Minimap.jpg",
+  };
+  const mapImage = manifest?.maps.find((item) => item.id === selectedMap)?.image || DEFAULT_MAP_IMAGES[selectedMap];
   const mapTransform = {
     transform: `translate(-50%, -50%) translate(${mapView.x}px, ${mapView.y}px) rotate(${mapView.rotation}deg) scale(${mapView.zoom})`,
   };
@@ -312,6 +417,10 @@ export function App() {
   }, [constrainMapView]);
 
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    // Close panels on map interaction
+    setShowLayerPanel(false);
+    setShowLegendPanel(false);
+
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: mapView.x, originY: mapView.y };
   }, [mapView.x, mapView.y]);
@@ -353,7 +462,18 @@ export function App() {
   }, []);
 
   return (
-    <main className={`app ${themeMode === "dark" ? "darkMode" : "lightMode"} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+    <main 
+      className={`app ${themeMode === "dark" ? "darkMode" : "lightMode"} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging && (
+        <div className="dragOverlay">
+          <span>Drop .nakama-0 files or folder to load</span>
+        </div>
+      )}
+
       <SidebarPanel
         collapsed={sidebarCollapsed}
         filteredMatches={filteredMatches}
@@ -363,9 +483,10 @@ export function App() {
         selectedMatchKey={selectedMatchKey}
         onDateChange={setSelectedDate}
         onQueryChange={setQuery}
-        onReset={loadBundledDataset}
+        onReset={handleResetWorkspace}
         onSelectMatch={setSelectedMatchKey}
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+        onDeleteMatch={handleDeleteMatch}
       />
 
       {showMobileSheet && (
@@ -380,11 +501,12 @@ export function App() {
             selectedMatchKey={selectedMatchKey}
             onDateChange={setSelectedDate}
             onQueryChange={setQuery}
-            onReset={loadBundledDataset}
+            onReset={handleResetWorkspace}
             onSelectMatch={setSelectedMatchKey}
             onToggleCollapsed={() => {}}
             isMobileSheet={true}
             onCloseSheet={() => setShowMobileSheet(false)}
+            onDeleteMatch={handleDeleteMatch}
           />
         </>
       )}
@@ -396,8 +518,26 @@ export function App() {
           selectedMap={selectedMap}
           onSelectMap={setSelectedMap}
           manifest={manifest}
-          onUpload={handleUpload}
+          onToggleLegend={() => setShowLegendPanel(v => !v)}
         />
+        
+        <div className="topLayersContainer">
+          <div className="playerSegment layersSegment" aria-label="Map layer modes">
+            {HEATMAP_OPTIONS.filter((option) => option.image || option.value === "off").map((option) => (
+              <button
+                key={option.value}
+                className={`segmentButton ${heatmap === option.value ? "active" : ""}`}
+                type="button"
+                aria-pressed={heatmap === option.value}
+                onClick={() => setHeatmap(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {showLegendPanel && <LegendPanel onClose={() => setShowLegendPanel(false)} />}
 
         <div
           className="mapShell"
@@ -414,10 +554,6 @@ export function App() {
                 <canvas ref={canvasRef} className="overlay" />
               </div>
               <MapToolsPanel
-                showLayerPanel={showLayerPanel}
-                onToggleLayerPanel={() => setShowLayerPanel((value) => !value)}
-                heatmap={heatmap}
-                onSelectHeatmap={setHeatmap}
                 onZoomIn={() => updateZoom(0.18)}
                 onZoomOut={() => updateZoom(-0.18)}
                 rotation={mapView.rotation}
@@ -433,7 +569,7 @@ export function App() {
 
         <PlaybackPanel
           timelineVisible={timelineVisible}
-          onMouseEnterTimeline={() => setTimelineVisible(true)}
+          onMouseEnterTimeline={() => { if (match) setTimelineVisible(true); }}
           onMouseLeaveTimeline={() => setTimelineVisible(false)}
           time={time}
           duration={duration}

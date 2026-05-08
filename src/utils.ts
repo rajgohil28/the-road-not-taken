@@ -18,7 +18,14 @@ export function formatMapName(value: string) {
 }
 
 export function formatDateLabel(value: string) {
+  if (value === "all") return "All dates";
+  if (value === "uploaded") return "Uploaded";
+  
   const date = new Date(`${value}T00:00:00`);
+  if (isNaN(date.getTime())) {
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  }
+  
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 

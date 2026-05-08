@@ -56,12 +56,17 @@ body {
   -webkit-backdrop-filter: var(--glass-blur);
   transform: scale(0.91);
   transform-origin: top left;
-  transition: height 0.24s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar.collapsed {
-  width: 324px;
-  height: auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
 }
 
 .sidebarHeader {
@@ -70,6 +75,11 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.sidebar.collapsed .sidebarHeader {
+  justify-content: center;
+  width: 100%;
 }
 
 .sidebarHeader h2 {
@@ -87,8 +97,8 @@ body {
 }
 
 .sidebarIconButton {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -96,6 +106,11 @@ body {
   background: transparent;
   color: #3c3c43;
   cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.sidebarIconButton:hover {
+  opacity: 0.7;
 }
 
 .sidebarIconButton.danger {
@@ -339,6 +354,18 @@ body {
   gap: 8px;
 }
 
+.topLayersContainer {
+  position: absolute;
+  top: 64px; /* Slightly below topbar which is at 17px + ~38px height */
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: max-content;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+}
+
 .roundIcon {
   width: 38px;
   height: 38px;
@@ -474,30 +501,7 @@ body {
   line-height: 1.2;
 }
 
-.floatingUpload {
-  width: 38px;
-  height: 38px;
-  background: rgba(10, 132, 255, 0.85);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-sizing: border-box;
-  padding: 0;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  box-shadow: 0 12px 28px rgba(10, 132, 255, 0.3);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  transition: all 0.2s ease;
-}
 
-.floatingUpload:hover {
-  background: rgba(10, 132, 255, 1);
-  transform: translateY(-1px);
-}
-
-.floatingUpload input { display: none; }
 
 .mapShell {
   position: absolute;
@@ -548,11 +552,12 @@ body {
   top: 69px;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 12px;
   z-index: 100;
 }
 
-.mapTools button:not(.modeCard) {
+.mapTools button:not(.modeCard):not(.segmentButton) {
   width: 42px;
   height: 42px;
   border-radius: 50%;
@@ -567,10 +572,41 @@ body {
   -webkit-backdrop-filter: var(--glass-blur);
 }
 
-.mapTools button:not(.modeCard).active {
+.mapTools button:not(.modeCard):not(.segmentButton).active {
   background: rgba(10, 132, 255, 0.85);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+.layersSegment {
+  display: flex;
+  background: var(--glass-bg-light);
+  border: 1px solid var(--glass-border-light);
+  border-radius: 20px;
+  padding: 4px;
+  box-shadow: var(--glass-shadow-light);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  z-index: 5;
+}
+
+.layersSegment button {
+  border: 0;
+  background: none;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.layersSegment button.active {
+  background: rgba(255, 255, 255, 0.8);
+  color: #0f172a;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
 }
 
 .zoomGroup {
@@ -662,11 +698,11 @@ body {
   pointer-events: none;
   transform: translateY(9px) scale(0.98);
   transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 10;
 }
 
-.bottomPanels:hover .floatingTimeline,
-.bottomPanels.timeline-visible .floatingTimeline,
-.bottomPanels:focus-within .floatingTimeline {
+.bottomPanels.has-match.timeline-visible .floatingTimeline,
+.bottomPanels.has-match:focus-within .floatingTimeline {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
@@ -940,13 +976,13 @@ body {
 .app.darkMode .floatingTimeline,
 .app.darkMode .playbackControls,
 .app.darkMode .eventInfoCard,
-.app.darkMode .mapTools button:not(.modeCard) {
+.app.darkMode .mapTools button:not(.modeCard):not(.segmentButton) {
   background: var(--glass-bg-dark);
   border-color: var(--glass-border-dark);
   box-shadow: var(--glass-shadow-dark);
 }
 
-.app.darkMode .mapTools button:not(.modeCard) {
+.app.darkMode .mapTools button:not(.modeCard):not(.segmentButton) {
   color: #cbd5e1;
 }
 
@@ -974,8 +1010,17 @@ body {
 .app.darkMode .dateControl svg,
 .app.darkMode .searchBox svg { color: #737373; }
 
-.app.darkMode .playerSegment button { color: #737373; }
-.app.darkMode .playerSegment button.active {
+.app.darkMode .layersSegment {
+  background: var(--glass-bg-dark);
+  border-color: var(--glass-border-dark);
+  box-shadow: var(--glass-shadow-dark);
+}
+
+.app.darkMode .playerSegment button,
+.app.darkMode .layersSegment button { color: #737373; }
+
+.app.darkMode .playerSegment button.active,
+.app.darkMode .layersSegment button.active {
   background: rgba(255, 255, 255, 0.15);
   color: #ffffff;
   box-shadow: 0 5px 14px -8px rgba(0, 0, 0, 0.5);
@@ -1020,13 +1065,13 @@ body {
 
 .app.darkMode .roundIcon:hover,
 .app.darkMode .levelSelect:hover,
-.app.darkMode .mapTools button:not(.modeCard):hover,
+.app.darkMode .mapTools button:not(.modeCard):not(.segmentButton):hover,
 .app.darkMode .modeCloseButton:hover,
 .app.darkMode .iconButton:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.15);
 }
 
-.app.darkMode .mapTools button:not(.modeCard).active {
+.app.darkMode .mapTools button:not(.modeCard):not(.segmentButton).active {
   background: rgba(37, 99, 235, 0.85);
   color: #eff6ff;
   border-color: rgba(255, 255, 255, 0.2);
@@ -1457,4 +1502,160 @@ body {
 .apiKeyModalActions button.primary {
   background: #0a84ff;
   color: #ffffff;
+}
+
+/* Legend Panel */
+.legendPanel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 260px;
+  background: var(--glass-bg-light);
+  border: 1px solid var(--glass-border-light);
+  border-radius: 20px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: var(--glass-shadow-light);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  z-index: 200;
+  animation: fadeInLegend 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeInLegend {
+  from { opacity: 0; transform: translate(-50%, -50%) translateY(12px); }
+  to { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
+}
+
+.app.darkMode .legendPanel {
+  background: var(--glass-bg-dark);
+  border-color: var(--glass-border-dark);
+  box-shadow: var(--glass-shadow-dark);
+}
+
+.legendHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.legendHeader h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.app.darkMode .legendHeader h3 {
+  color: #ffffff;
+}
+
+.legendSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.legendSection h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.legendGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #334155;
+  font-weight: 500;
+}
+
+.app.darkMode .legendItem {
+  color: #cbd5e1;
+}
+
+.legendColorDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.legendMiniPreview {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #0f172a;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.legendHelpText {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.app.darkMode .legendHelpText {
+  color: #94a3b8;
+}
+
+.sidebarEmptyState {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.sidebarEmptyState p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.app.darkMode .sidebarEmptyState p {
+  color: #94a3b8;
+}
+
+.dragOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 132, 255, 0.15);
+  border: 4px dashed #0a84ff;
+  border-radius: 24px;
+  margin: 16px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+.dragOverlay span {
+  background: #0a84ff;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 30px;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(10, 132, 255, 0.3);
 }
