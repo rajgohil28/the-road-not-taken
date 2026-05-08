@@ -12,6 +12,7 @@ import {
   Plus,
   RefreshCcw,
   Search,
+  User,
   SkipBack,
   SkipForward,
   Sun,
@@ -23,8 +24,8 @@ import { ingestRawParquetFiles } from "./dataIngest";
 import type { HeatmapMode, JourneyEvent, Manifest, MatchPayload, MatchSummary, Participant } from "./types";
 
 const MAP_SIZE = 1024;
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 6;
+const MIN_ZOOM = 1.5;
+const MAX_ZOOM = 8;
 const SPEED_OPTIONS = [0.25, 0.5, 1, 1.5];
 const EVENT_COLORS: Record<string, string> = {
   Kill: "#ff405c",
@@ -72,9 +73,10 @@ export function App() {
   const [heatmap, setHeatmap] = useState<HeatmapMode>("traffic");
   const [showLayerPanel, setShowLayerPanel] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showMobileSheet, setShowMobileSheet] = useState(false);
   const [themeMode, setThemeMode] = useState<"light" | "dark">("dark");
   const [timelineVisible, setTimelineVisible] = useState(false);
-  const [mapView, setMapView] = useState({ zoom: 1, rotation: 0, x: 0, y: 0 });
+  const [mapView, setMapView] = useState({ zoom: 3, rotation: 0, x: 0, y: 0 });
   const [hoveredEvent, setHoveredEvent] = useState<JourneyEvent | null>(null);
   const [toggles, setToggles] = useState<Toggles>({ humans: true, bots: true, paths: true, events: true });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -271,8 +273,20 @@ export function App() {
 
   useEffect(() => {
     draw();
-    window.addEventListener("resize", draw);
-    return () => window.removeEventListener("resize", draw);
+    
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const handleResize = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        draw();
+      }, 100);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener("resize", handleResize);
+    };
   }, [draw]);
 
   const mapImage = manifest?.maps.find((item) => item.id === selectedMap)?.image;
@@ -405,7 +419,7 @@ export function App() {
         <header className="topbar">
           <button
             className="roundIcon themeToggle"
-            title="Dark and light mode selector"
+            data-tooltip="Dark and light mode selector"
             onClick={() => setThemeMode((value) => value === "light" ? "dark" : "light")}
           >
             <Sun size={24} />
@@ -417,31 +431,11 @@ export function App() {
               {manifest?.maps.map((item) => <option key={item.id} value={item.id}>{formatMapName(item.id)}</option>)}
             </select>
           </label>
-          <label className="floatingUpload" title="Upload dataset" aria-label="Upload dataset">
+          <label className="floatingUpload" data-tooltip="Upload dataset" aria-label="Upload dataset">
             <Upload size={18} />
             <input type="file" multiple onChange={handleUpload} />
           </label>
         </header>
-
-        {showLayerPanel && (
-          <div className="modeCards" aria-label="Map layer modes">
-            <button className="modeCloseButton" type="button" title="Close map layers" onClick={() => setShowLayerPanel(false)}>
-              <X size={13} />
-            </button>
-            {HEATMAP_OPTIONS.filter((option) => option.image).map((option) => (
-              <button
-                key={option.value}
-                className={heatmap === option.value ? "modeCard active" : "modeCard"}
-                type="button"
-                aria-pressed={heatmap === option.value}
-                onClick={() => setHeatmap(option.value)}
-              >
-                <img className="modePreview" src={option.image} alt="" draggable={false} />
-                <strong>{option.label}</strong>
-              </button>
-            ))}
-          </div>
-        )}
 
         <div
           className="mapShell"
@@ -458,20 +452,38 @@ export function App() {
                 <canvas ref={canvasRef} className="overlay" />
               </div>
               <div className="mapTools" aria-label="Map tools" onPointerDown={(event) => event.stopPropagation()}>
-                <button
-                  className={showLayerPanel ? "active" : ""}
-                  title="Map layers"
-                  onClick={() => setShowLayerPanel((value) => !value)}
-                >
-                  <MapIcon size={16} />
-                </button>
+                <div style={{ position: "relative" }}>
+                  <button
+                    className={showLayerPanel ? "active" : ""}
+                    data-tooltip="Map layers"
+                    onClick={() => setShowLayerPanel((value) => !value)}
+                  >
+                    <MapIcon size={16} />
+                  </button>
+                  {showLayerPanel && (
+                    <div className="modeCards" aria-label="Map layer modes">
+                      {HEATMAP_OPTIONS.filter((option) => option.image).map((option) => (
+                        <button
+                          key={option.value}
+                          className={heatmap === option.value ? "modeCard active" : "modeCard"}
+                          type="button"
+                          aria-pressed={heatmap === option.value}
+                          onClick={() => setHeatmap(option.value)}
+                        >
+                          <img className="modePreview" src={option.image} alt="" draggable={false} />
+                          <strong>{option.label}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="zoomGroup">
-                  <button title="Zoom in" onClick={() => updateZoom(0.18)}><Plus size={16} /></button>
-                  <button title="Zoom out" onClick={() => updateZoom(-0.18)}><Minus size={16} /></button>
+                  <button data-tooltip="Zoom in" onClick={() => updateZoom(0.18)}><Plus size={16} /></button>
+                  <button data-tooltip="Zoom out" onClick={() => updateZoom(-0.18)}><Minus size={16} /></button>
                 </div>
                 <button
                   className="compassControl"
-                  title="Drag to rotate map"
+                  data-tooltip="Drag to rotate map"
                   onPointerDown={handleCompassPointerDown}
                   onPointerMove={handleCompassPointerMove}
                   onPointerUp={handleCompassPointerUp}
@@ -541,13 +553,13 @@ export function App() {
               <button className={`playButton ${playing ? "active" : ""}`} onClick={() => setPlaying((value) => !value)} disabled={!match} title={playing ? "Pause" : "Play"}>
                 {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
               </button>
-              <button className="iconButton" onClick={() => setTime(0)} disabled={!match} title="Reset">
+              <button className="iconButton" onClick={() => setTime(0)} disabled={!match} data-tooltip="Reset">
                 <RefreshCcw size={18} />
               </button>
-              <button className="iconButton" onClick={stepBack} disabled={!match} title="Step Back">
+              <button className="iconButton" onClick={stepBack} disabled={!match} data-tooltip="Step Back">
                 <SkipBack size={18} />
               </button>
-              <button className="iconButton" onClick={stepForward} disabled={!match} title="Step Forward">
+              <button className="iconButton" onClick={stepForward} disabled={!match} data-tooltip="Step Forward">
                 <SkipForward size={18} />
               </button>
             </div>
@@ -592,6 +604,8 @@ interface SidebarPanelProps {
   onReset: () => void;
   onSelectMatch: (key: string) => void;
   onToggleCollapsed: () => void;
+  isMobileSheet?: boolean;
+  onCloseSheet?: () => void;
 }
 
 function SidebarPanel({
@@ -606,86 +620,113 @@ function SidebarPanel({
   onReset,
   onSelectMatch,
   onToggleCollapsed,
+  isMobileSheet,
+  onCloseSheet,
 }: SidebarPanelProps) {
+  const [activeTab, setActiveTab] = useState<"Matches" | "AI">("Matches");
   const visibleMatches = filteredMatches.slice(0, 8);
 
+  const isCollapsed = isMobileSheet ? false : collapsed;
+  const className = isMobileSheet ? "mobileSheet" : (isCollapsed ? "sidebar collapsed" : "sidebar");
+
   return (
-    <aside className={collapsed ? "sidebar collapsed" : "sidebar"}>
+    <aside className={className}>
+      {isMobileSheet && (
+        <div className="mobileSheetHandle" onClick={onCloseSheet} />
+      )}
       <div className="sidebarHeader">
-        <h2>Matches</h2>
+        <h2>{activeTab === "Matches" ? "Matches" : "AI Assistant"}</h2>
         <div className="sidebarActions">
-          {!collapsed && (
-            <button className="sidebarIconButton danger" type="button" aria-label="Delete">
+          {!isCollapsed && (
+            <button className="sidebarIconButton danger" type="button" aria-label="Delete" data-tooltip="Delete">
               <Trash2 size={15} />
             </button>
           )}
-          <button
-            className="sidebarIconButton"
-            type="button"
-            title={collapsed ? "Expand side panel" : "Collapse side panel"}
-            onClick={onToggleCollapsed}
-          >
-            {collapsed ? <PanelRight size={15} /> : <PanelLeft size={15} />}
-          </button>
+          {!isMobileSheet && (
+            <button
+              className="sidebarIconButton"
+              type="button"
+              data-tooltip={isCollapsed ? "Expand side panel" : "Collapse side panel"}
+              onClick={onToggleCollapsed}
+            >
+              {isCollapsed ? <PanelRight size={15} /> : <PanelLeft size={15} />}
+            </button>
+          )}
         </div>
       </div>
 
-      {!collapsed && (
+      {!isCollapsed && (
         <>
           <div className="playerSegment" aria-label="Panel mode">
-            <button className="active" type="button" aria-pressed="true">
+            <button
+              className={activeTab === "Matches" ? "active" : ""}
+              type="button"
+              aria-pressed={activeTab === "Matches"}
+              onClick={() => setActiveTab("Matches")}
+            >
               Matches
             </button>
-            <button type="button" aria-pressed="false">
+            <button
+              className={activeTab === "AI" ? "active" : ""}
+              type="button"
+              aria-pressed={activeTab === "AI"}
+              onClick={() => setActiveTab("AI")}
+            >
               AI
             </button>
           </div>
 
-          <div className="matchSearchTools">
-            <label className="searchBox">
-              <Search size={14} />
-              <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search" />
-            </label>
-            <label className="dateControl">
-              <CalendarDays size={14} />
-              <span>{selectedDate === "all" ? "All dates" : formatDateLabel(selectedDate)}</span>
-              <select value={selectedDate} onChange={(event) => onDateChange(event.target.value)} aria-label="Date filter">
-                <option value="all">All dates</option>
-                {manifest?.dates.map((date) => <option key={date} value={date}>{formatDateLabel(date)}</option>)}
-              </select>
-            </label>
-          </div>
+          {activeTab === "Matches" ? (
+            <>
+              <div className="matchSearchTools">
+                <label className="searchBox">
+                  <Search size={14} />
+                  <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search" />
+                </label>
+                <label className="dateControl">
+                  <CalendarDays size={14} />
+                  <span>{selectedDate === "all" ? "All dates" : formatDateLabel(selectedDate)}</span>
+                  <select value={selectedDate} onChange={(event) => onDateChange(event.target.value)} aria-label="Date filter">
+                    <option value="all">All dates</option>
+                    {manifest?.dates.map((date) => <option key={date} value={date}>{formatDateLabel(date)}</option>)}
+                  </select>
+                </label>
+              </div>
 
-          <div className="sidebarMatchList">
-            <div className="sidebarTableHeader">
-              <strong>Match / Player ID</strong>
-              <strong>Killed By</strong>
-            </div>
-            <div className="sidebarRows">
-              {visibleMatches.map((item) => {
-                const badge = getMatchBadge(item);
-                return (
-                  <button
-                    key={item.key}
-                    className={item.key === selectedMatchKey ? "sidebarMatchRow active" : "sidebarMatchRow"}
-                    type="button"
-                    onClick={() => onSelectMatch(item.key)}
-                  >
-                    <span className="sidebarMatchCopy">
-                      <strong>{formatMatchLabel(item)}</strong>
-                      <em>{formatMapName(item.mapId)} · {formatTime(item.durationSec)} · {formatNumber(item.pathPointCount)} pts</em>
-                    </span>
-                    <span className={`rowBadge ${badge.tone}`}>{badge.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+              <div className="sidebarMatchList">
+                <div className="sidebarTableHeader">
+                  <strong>Match / Player ID</strong>
+                  <strong>Killed By</strong>
+                </div>
+                <div className="sidebarRows">
+                  {visibleMatches.map((item) => {
+                    const badge = getMatchBadge(item);
+                    return (
+                      <button
+                        key={item.key}
+                        className={item.key === selectedMatchKey ? "sidebarMatchRow active" : "sidebarMatchRow"}
+                        type="button"
+                        onClick={() => onSelectMatch(item.key)}
+                      >
+                        <span className="sidebarMatchCopy">
+                          <strong>{formatMatchLabel(item)}</strong>
+                          <em>{formatMapName(item.mapId)} · {formatTime(item.durationSec)} · {formatNumber(item.pathPointCount)} pts</em>
+                        </span>
+                        <span className={`rowBadge ${badge.tone}`}>{badge.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-          <div className="sidebarFooter">
-            <span>{formatNumber(manifest?.stats.diagnostics.rows_seen ?? 0)} rows</span>
-            <button type="button" onClick={onReset}>Reset</button>
-          </div>
+              <div className="sidebarFooter">
+                <span>{formatNumber(manifest?.stats.diagnostics.rows_seen ?? 0)} rows</span>
+                <button type="button" onClick={onReset}>Reset</button>
+              </div>
+            </>
+          ) : (
+            <AIChat />
+          )}
         </>
       )}
     </aside>
@@ -903,6 +944,102 @@ function normalizeDegrees(value: number) {
 
 function shortestAngleDelta(a: number, b: number) {
   return ((a - b + 540) % 360) - 180;
+}
+
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "tool";
+  content: string;
+}
+
+function AIChat() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputValue, setInputValue] = useState("");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [tempKey, setTempKey] = useState("");
+
+  const handleInputFocus = () => {
+    if (!apiKey) {
+      setIsApiKeyModalOpen(true);
+    }
+  };
+
+  const handleSaveKey = () => {
+    if (tempKey.trim()) {
+      localStorage.setItem("gemini_api_key", tempKey.trim());
+      setApiKey(tempKey.trim());
+      setIsApiKeyModalOpen(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputValue.trim() || !apiKey) return;
+
+    const newMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: inputValue.trim() };
+    setMessages((prev) => [...prev, newMsg]);
+    setInputValue("");
+    
+    setTimeout(() => {
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now().toString() + "_tool", role: "tool", content: "tool_call: get_map_stats" },
+        { id: Date.now().toString() + "_ast", role: "assistant", content: "I am ready to help you analyze this map using Gemini 3 Flash. Please provide the system prompt." }
+      ]);
+    }, 1000);
+  };
+
+  return (
+    <div className="aiChatContainer">
+      <div className="aiChatMessages">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`aiMessageRow ${msg.role}`}>
+            {msg.role === "tool" ? (
+              <span className="aiToolText">{msg.content}</span>
+            ) : (
+              <div className={`aiMessageBubble ${msg.role}`}>
+                {msg.content}
+              </div>
+            )}
+          </div>
+        ))}
+        {messages.length === 0 && (
+          <div className="aiEmptyState">Ask Gemini about the map...</div>
+        )}
+      </div>
+
+      <form className="aiChatInputArea" onSubmit={handleSubmit}>
+        <input
+          type="text"
+          placeholder="Message Gemini..."
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onFocus={handleInputFocus}
+        />
+        <button type="submit" disabled={!inputValue.trim()}>Send</button>
+      </form>
+
+      {isApiKeyModalOpen && (
+        <div className="apiKeyModalOverlay">
+          <div className="apiKeyModal">
+            <h3>Gemini API Key</h3>
+            <p>You need a Gemini API key to use the AI Assistant. It will be saved locally.</p>
+            <input 
+              type="password" 
+              placeholder="AIzaSy..." 
+              value={tempKey}
+              onChange={(e) => setTempKey(e.target.value)}
+            />
+            <div className="apiKeyModalActions">
+              <button type="button" onClick={() => setIsApiKeyModalOpen(false)}>Cancel</button>
+              <button type="button" className="primary" onClick={handleSaveKey}>Save Key</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 async function parseUploadedDataset(files: File[]): Promise<UploadedDataset> {
