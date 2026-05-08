@@ -1,4 +1,4 @@
-import type { MatchSummary } from "./types";
+import type { ActorType, MatchSummary } from "./types";
 
 export function formatNumber(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
@@ -29,8 +29,14 @@ export function formatDateLabel(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-export function formatMatchLabel(item: MatchSummary) {
-  return `${item.id.replace(".nakama-0", "").slice(0, 8)} · ${item.humanCount ? "Squad" : "Bot"} route`;
+export function formatMatchLabel(item: MatchSummary, actorType = item.primaryActorType) {
+  return `${item.id.replace(".nakama-0", "").slice(0, 8)} · ${formatActorType(actorType)} player`;
+}
+
+export function formatActorType(actorType?: ActorType) {
+  if (actorType === "human") return "Human";
+  if (actorType === "bot") return "Bot";
+  return "Loading";
 }
 
 export function getMatchBadge(item: MatchSummary) {

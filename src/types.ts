@@ -1,5 +1,5 @@
-export type MapId = "AmbroseValley" | "GrandRift" | "Lockdown";
 export type ActorType = "human" | "bot";
+export type MapId = "AmbroseValley" | "GrandRift" | "Lockdown";
 export type HeatmapMode = "traffic" | "kills" | "deaths" | "storm" | "loot" | "off";
 
 export interface MapConfig {
@@ -18,6 +18,7 @@ export interface MatchSummary {
   durationSec: number;
   humanCount: number;
   botCount: number;
+  primaryActorType?: ActorType;
   eventCounts: Record<string, number>;
   pathPointCount: number;
 }
@@ -60,6 +61,7 @@ export interface MatchPayload {
   date: string;
   mapId: MapId;
   durationSec: number;
+  primaryActorType?: ActorType;
   participants: Participant[];
   events: JourneyEvent[];
 }
@@ -80,4 +82,7 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool";
   content: string;
+  toolName?: string;
+  toolArgs?: Record<string, unknown>;
+  toolResult?: unknown;
 }

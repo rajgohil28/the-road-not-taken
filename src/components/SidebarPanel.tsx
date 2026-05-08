@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CalendarDays, PanelLeft, PanelRight, Search, Trash2 } from "lucide-react";
-import type { Manifest, MatchSummary } from "../types";
+import type { ActorType, Manifest, MatchSummary } from "../types";
 import { formatDateLabel, formatMapName, formatMatchLabel, formatNumber, formatTime, getMatchBadge } from "../utils";
 import { AIChat } from "./AIChat";
 
@@ -11,6 +11,8 @@ export interface SidebarPanelProps {
   query: string;
   selectedDate: string;
   selectedMatchKey: string;
+  selectedPlayerId?: string;
+  matchActorTypes?: Record<string, ActorType>;
   onDateChange: (value: string) => void;
   onQueryChange: (value: string) => void;
   onReset: () => void;
@@ -28,6 +30,8 @@ export function SidebarPanel({
   query,
   selectedDate,
   selectedMatchKey,
+  selectedPlayerId = "",
+  matchActorTypes = {},
   onDateChange,
   onQueryChange,
   onReset,
@@ -38,20 +42,43 @@ export function SidebarPanel({
   onDeleteMatch,
 }: SidebarPanelProps) {
   const [activeTab, setActiveTab] = useState<"Matches" | "AI">("Matches");
-  const visibleMatches = filteredMatches.slice(0, 8);
 
   const isCollapsed = isMobileSheet ? false : collapsed;
   const className = isMobileSheet ? "mobileSheet" : (isCollapsed ? "sidebar collapsed" : "sidebar");
 
   return (
-    <aside className={className}>
+    <aside
+      className={className}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerMove={(event) => event.stopPropagation()}
+      onWheel={(event) => event.stopPropagation()}
+    >
       {isMobileSheet && (
         <div className="mobileSheetHandle" onClick={onCloseSheet} />
       )}
       <div className="sidebarHeader">
-        {!isCollapsed && <h2>{activeTab === "Matches" ? "Matches" : "AI Assistant"}</h2>}
+        {!isCollapsed && (
+          <div className="playerSegment sidebarModeSegment" aria-label="Panel mode">
+            <button
+              className={activeTab === "Matches" ? "active" : ""}
+              type="button"
+              aria-pressed={activeTab === "Matches"}
+              onClick={() => setActiveTab("Matches")}
+            >
+              Matches
+            </button>
+            <button
+              className={activeTab === "AI" ? "active" : ""}
+              type="button"
+              aria-pressed={activeTab === "AI"}
+              onClick={() => setActiveTab("AI")}
+            >
+              AI
+            </button>
+          </div>
+        )}
         <div className="sidebarActions">
-          {!isCollapsed && selectedMatchKey && onDeleteMatch && (
+          {!isCollapsed && selectedPlayerId && onDeleteMatch && (
             <button className="sidebarIconButton danger" type="button" aria-label="Delete" data-tooltip="Delete" onClick={onDeleteMatch}>
               <Trash2 size={15} />
             </button>
@@ -76,27 +103,7 @@ export function SidebarPanel({
           </div>
         ) : (
           <>
-            <div className="playerSegment" aria-label="Panel mode">
-            <button
-              className={activeTab === "Matches" ? "active" : ""}
-              type="button"
-              aria-pressed={activeTab === "Matches"}
-              onClick={() => setActiveTab("Matches")}
-            >
-              Matches
-            </button>
-            <button
-              className={activeTab === "AI" ? "active" : ""}
-              type="button"
-              aria-pressed={activeTab === "AI"}
-              onClick={() => setActiveTab("AI")}
-            >
-              AI
-            </button>
-          </div>
-
-          {activeTab === "Matches" ? (
-            <>
+          <div className={activeTab === "Matches" ? "sidebarTabPane active" : "sidebarTabPane"}>
               <div className="matchSearchTools">
                 <label className="searchBox">
                   <Search size={14} />
@@ -118,7 +125,7 @@ export function SidebarPanel({
                   <strong>Killed By</strong>
                 </div>
                 <div className="sidebarRows">
-                  {visibleMatches.map((item) => {
+                  {filteredMatches.map((item) => {
                     const badge = getMatchBadge(item);
                     return (
                       <button
@@ -128,7 +135,7 @@ export function SidebarPanel({
                         onClick={() => onSelectMatch(item.key)}
                       >
                         <span className="sidebarMatchCopy">
-                          <strong>{formatMatchLabel(item)}</strong>
+                          <strong>{formatMatchLabel(item, matchActorTypes[item.key] ?? item.primaryActorType)}</strong>
                           <em>{formatMapName(item.mapId)} · {formatTime(item.durationSec)} · {formatNumber(item.pathPointCount)} pts</em>
                         </span>
                         <span className={`rowBadge ${badge.tone}`}>{badge.label}</span>
@@ -142,10 +149,11 @@ export function SidebarPanel({
                 <span>{formatNumber(manifest?.stats.diagnostics.rows_seen ?? 0)} rows</span>
                 <button type="button" onClick={onReset}>Reset</button>
               </div>
-            </>
-          ) : (
+          </div>
+
+          <div className={activeTab === "AI" ? "sidebarTabPane active" : "sidebarTabPane"}>
             <AIChat />
-          )}
+          </div>
         </>
         )
       )}

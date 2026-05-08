@@ -160,6 +160,7 @@ function buildDataset(workingMatches: globalThis.Map<string, WorkingMatch>, diag
     const events = participants.flatMap((player) => player.events).sort((a, b) => a.t - b.t);
     const humanCount = participants.filter((player) => player.type === "human").length;
     const botCount = participants.length - humanCount;
+    const primaryActorType = getPrimaryActorType(participants);
     const pathPointCount = participants.reduce((total, player) => total + player.path.length, 0);
     const durationSec = round((maxTs - minTs) / 1000);
 
@@ -169,6 +170,7 @@ function buildDataset(workingMatches: globalThis.Map<string, WorkingMatch>, diag
       date: match.date,
       mapId: match.mapId,
       durationSec,
+      primaryActorType,
       participants,
       events,
     });
@@ -180,6 +182,7 @@ function buildDataset(workingMatches: globalThis.Map<string, WorkingMatch>, diag
       durationSec,
       humanCount,
       botCount,
+      primaryActorType,
       eventCounts: match.eventCounts,
       pathPointCount,
     });
@@ -201,6 +204,10 @@ function buildDataset(workingMatches: globalThis.Map<string, WorkingMatch>, diag
     },
     matches: payloads,
   };
+}
+
+function getPrimaryActorType(participants: Participant[]) {
+  return participants.find((player) => player.type === "human")?.type ?? participants[0]?.type ?? "bot";
 }
 
 function getWorkingMatch(matches: globalThis.Map<string, WorkingMatch>, key: string, id: string, date: string, mapId: MapId) {
