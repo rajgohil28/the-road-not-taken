@@ -72,7 +72,13 @@ export async function ingestRawParquetFiles(files: File[]): Promise<BrowserDatas
     diagnostics.files_seen += 1;
     try {
       const rows = await parquetReadObjects({ file: await file.arrayBuffer() }) as RawRow[];
-      const date = dateFromPath(file.webkitRelativePath || file.name);
+      let date = dateFromPath(file.webkitRelativePath || file.name);
+      if (date === "uploaded" && rows.length > 0) {
+        const firstTs = timestampMs(rows[0].ts);
+        if (firstTs > 0 && firstTs < 3000000000000) {
+           date = new Date(firstTs).toISOString().split("T")[0];
+        }
+      }
       for (const row of rows) {
         diagnostics.rows_seen += 1;
         if (!isMapId(row.map_id)) continue;

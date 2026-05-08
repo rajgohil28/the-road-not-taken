@@ -1,12 +1,6 @@
-import { Map as MapIcon, Minus, Plus, X } from "lucide-react";
-import type { HeatmapMode } from "../types";
-import { HEATMAP_OPTIONS } from "../constants";
+import { Minus, Plus } from "lucide-react";
 
 export interface MapToolsPanelProps {
-  showLayerPanel: boolean;
-  onToggleLayerPanel: () => void;
-  heatmap: HeatmapMode;
-  onSelectHeatmap: (mode: HeatmapMode) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   rotation: number;
@@ -16,10 +10,6 @@ export interface MapToolsPanelProps {
 }
 
 export function MapToolsPanel({
-  showLayerPanel,
-  onToggleLayerPanel,
-  heatmap,
-  onSelectHeatmap,
   onZoomIn,
   onZoomOut,
   rotation,
@@ -29,31 +19,6 @@ export function MapToolsPanel({
 }: MapToolsPanelProps) {
   return (
     <div className="mapTools" aria-label="Map tools" onPointerDown={(event) => event.stopPropagation()}>
-      <div style={{ position: "relative" }}>
-        <button
-          className={showLayerPanel ? "active" : ""}
-          data-tooltip="Map layers"
-          onClick={onToggleLayerPanel}
-        >
-          <MapIcon size={16} />
-        </button>
-        {showLayerPanel && (
-          <div className="modeCards" aria-label="Map layer modes">
-            {HEATMAP_OPTIONS.filter((option) => option.image).map((option) => (
-              <button
-                key={option.value}
-                className={heatmap === option.value ? "modeCard active" : "modeCard"}
-                type="button"
-                aria-pressed={heatmap === option.value}
-                onClick={() => onSelectHeatmap(option.value)}
-              >
-                <img className="modePreview" src={option.image} alt="" draggable={false} />
-                <strong>{option.label}</strong>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
       <div className="zoomGroup">
         <button data-tooltip="Zoom in" onClick={onZoomIn}><Plus size={16} /></button>
         <button data-tooltip="Zoom out" onClick={onZoomOut}><Minus size={16} /></button>

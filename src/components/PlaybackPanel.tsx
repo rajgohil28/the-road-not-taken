@@ -49,12 +49,11 @@ export function PlaybackPanel({
   onSpeedChange,
 }: PlaybackPanelProps) {
   return (
-    <div
-      className={timelineVisible ? "bottomPanels timeline-visible" : "bottomPanels"}
-      onMouseEnter={onMouseEnterTimeline}
-      onMouseLeave={onMouseLeaveTimeline}
-    >
-      <div className="floatingTimeline">
+    <div className={`bottomPanels ${timelineVisible ? "timeline-visible" : ""} ${hasMatch ? "has-match" : ""}`.trim()}>
+      <div className="floatingTimeline"
+        onMouseEnter={onMouseEnterTimeline}
+        onMouseLeave={onMouseLeaveTimeline}
+      >
         <span className="timelineTime">{formatTime(time)}</span>
         <div
           className="timelineRail"
@@ -93,7 +92,11 @@ export function PlaybackPanel({
         <span className="timelineTime duration">{formatTime(duration)}</span>
       </div>
 
-      <div className="playbackControls">
+      <div 
+        className="playbackControls"
+        onMouseEnter={onMouseEnterTimeline}
+        onMouseLeave={onMouseLeaveTimeline}
+      >
         <button
           className="iconButton mobileSettingsButton"
           type="button"

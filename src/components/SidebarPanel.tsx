@@ -18,6 +18,7 @@ export interface SidebarPanelProps {
   onToggleCollapsed: () => void;
   isMobileSheet?: boolean;
   onCloseSheet?: () => void;
+  onDeleteMatch?: () => void;
 }
 
 export function SidebarPanel({
@@ -34,6 +35,7 @@ export function SidebarPanel({
   onToggleCollapsed,
   isMobileSheet,
   onCloseSheet,
+  onDeleteMatch,
 }: SidebarPanelProps) {
   const [activeTab, setActiveTab] = useState<"Matches" | "AI">("Matches");
   const visibleMatches = filteredMatches.slice(0, 8);
@@ -47,10 +49,10 @@ export function SidebarPanel({
         <div className="mobileSheetHandle" onClick={onCloseSheet} />
       )}
       <div className="sidebarHeader">
-        <h2>{activeTab === "Matches" ? "Matches" : "AI Assistant"}</h2>
+        {!isCollapsed && <h2>{activeTab === "Matches" ? "Matches" : "AI Assistant"}</h2>}
         <div className="sidebarActions">
-          {!isCollapsed && (
-            <button className="sidebarIconButton danger" type="button" aria-label="Delete" data-tooltip="Delete">
+          {!isCollapsed && selectedMatchKey && onDeleteMatch && (
+            <button className="sidebarIconButton danger" type="button" aria-label="Delete" data-tooltip="Delete" onClick={onDeleteMatch}>
               <Trash2 size={15} />
             </button>
           )}
@@ -61,15 +63,20 @@ export function SidebarPanel({
               data-tooltip={isCollapsed ? "Expand side panel" : "Collapse side panel"}
               onClick={onToggleCollapsed}
             >
-              {isCollapsed ? <PanelRight size={15} /> : <PanelLeft size={15} />}
+              {isCollapsed ? <PanelRight size={18} /> : <PanelLeft size={18} />}
             </button>
           )}
         </div>
       </div>
 
       {!isCollapsed && (
-        <>
-          <div className="playerSegment" aria-label="Panel mode">
+        !manifest ? (
+          <div className="sidebarEmptyState">
+            <p>Drag and drop <strong>.nakama-0</strong> files or a folder anywhere to start.</p>
+          </div>
+        ) : (
+          <>
+            <div className="playerSegment" aria-label="Panel mode">
             <button
               className={activeTab === "Matches" ? "active" : ""}
               type="button"
@@ -140,6 +147,7 @@ export function SidebarPanel({
             <AIChat />
           )}
         </>
+        )
       )}
     </aside>
   );
