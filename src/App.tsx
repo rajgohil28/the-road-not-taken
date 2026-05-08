@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import {
+  CalendarDays,
   ChevronDown,
+  PanelLeft,
+  PanelRight,
   Gauge,
-  Layers,
   Map as MapIcon,
   Minus,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pause,
   Play,
   Plus,
@@ -14,8 +14,8 @@ import {
   Search,
   SkipBack,
   SkipForward,
-  Sparkles,
   Sun,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -82,6 +82,7 @@ export function App() {
   const mapShellRef = useRef<HTMLDivElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
+  const timelineDragRef = useRef<number | null>(null);
   const compassDragRef = useRef<number | null>(null);
   const compassFrameRef = useRef<number | null>(null);
   const pendingCompassAngleRef = useRef<number | null>(null);
@@ -359,96 +360,55 @@ export function App() {
   const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
   }, []);
+  const scrubTimelineFromPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!duration) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const percent = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+    setTime(percent * duration);
+  }, [duration]);
+  const handleTimelinePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    timelineDragRef.current = event.pointerId;
+    setPlaying(false);
+    scrubTimelineFromPointer(event);
+  }, [scrubTimelineFromPointer]);
+  const handleTimelinePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (timelineDragRef.current !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    scrubTimelineFromPointer(event);
+  }, [scrubTimelineFromPointer]);
+  const handleTimelinePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (timelineDragRef.current === event.pointerId) timelineDragRef.current = null;
+    event.stopPropagation();
+  }, []);
 
   return (
     <main className={`app ${themeMode === "dark" ? "darkMode" : "lightMode"} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-      <aside className={sidebarCollapsed ? "sidebar collapsed" : "sidebar"}>
-        <div className="brand">
-          <div className="brandIcon"><MapIcon size={20} /></div>
-          {!sidebarCollapsed && (
-            <div className="brandCopy">
-              <h1>Matches</h1>
-              <p>{filteredMatches.length} visible entries</p>
-            </div>
-          )}
-          <button
-            className="collapseButton"
-            title={sidebarCollapsed ? "Expand side panel" : "Collapse side panel"}
-            onClick={() => setSidebarCollapsed((value) => !value)}
-          >
-            {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-          </button>
-        </div>
-
-        {!sidebarCollapsed && <section className="panel matchPanel">
-          <div className="matchHeader">
-            <strong>Matches</strong>
-            <span>{filteredMatches.length}</span>
-          </div>
-          <div className="playerSegment">
-            <button className={toggles.humans && toggles.bots ? "active" : ""} onClick={() => setToggles({ ...toggles, humans: true, bots: true })}>All</button>
-            <button className={toggles.humans && !toggles.bots ? "active" : ""} onClick={() => setToggles({ ...toggles, humans: true, bots: false })}>Humans</button>
-            <button className={!toggles.humans && toggles.bots ? "active" : ""} onClick={() => setToggles({ ...toggles, humans: false, bots: true })}>Bots</button>
-          </div>
-          <div className="filterRow">
-            <div className="searchBox">
-              <Search size={15} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="match id" />
-            </div>
-            <select value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className="dateSelect">
-              <option value="all">All dates</option>
-              {manifest?.dates.map((date) => <option key={date}>{date}</option>)}
-            </select>
-          </div>
-          <div className="playerPicker">
-            <div className="playerPickerHeader">
-              <span>Selected player</span>
-              <strong>{match?.participants.length ?? 0}</strong>
-            </div>
-            <div className="playerRows">
-              {match?.participants.map((participant, index) => (
-                <button
-                  key={participant.userId}
-                  className={participant.userId === selectedPlayerId ? "playerRow active" : "playerRow"}
-                  type="button"
-                  onClick={() => setSelectedPlayerId(participant.userId)}
-                >
-                  <i className={participant.type === "human" ? "humanDot" : "botDot"} />
-                  <span>
-                    <strong>{index === 0 ? "Player 1" : `Player ${index + 1}`}</strong>
-                    <em>{participant.userId.slice(0, 8)} · {participant.events.length} events</em>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="matchList">
-            {filteredMatches.slice(0, 20).map((item) => (
-              <button key={item.key} className={item.key === selectedMatchKey ? "matchRow active" : "matchRow"} onClick={() => setSelectedMatchKey(item.key)}>
-                <span className="matchId">{item.id.replace(".nakama-0", "").slice(0, 8)}</span>
-                <span className="matchMeta">
-                  <em>{formatTime(item.durationSec)}</em>
-                  <em>{item.humanCount} human · {item.botCount} bots</em>
-                </span>
-                <i className="killCount">{(item.eventCounts.Kill ?? 0) + (item.eventCounts.BotKill ?? 0)}K</i>
-              </button>
-            ))}
-          </div>
-          <div className="matchFooter">
-            <span>{uploadedDataset ? "Uploaded" : "Bundled"} · {formatNumber(manifest?.stats.diagnostics.rows_seen ?? 0)} rows</span>
-            <button onClick={loadBundledDataset}>Reset</button>
-          </div>
-        </section>}
-      </aside>
+      <SidebarPanel
+        collapsed={sidebarCollapsed}
+        filteredMatches={filteredMatches}
+        manifest={manifest}
+        query={query}
+        selectedDate={selectedDate}
+        selectedMatchKey={selectedMatchKey}
+        onDateChange={setSelectedDate}
+        onQueryChange={setQuery}
+        onReset={loadBundledDataset}
+        onSelectMatch={setSelectedMatchKey}
+        onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+      />
 
       <section className="workspace">
         <header className="topbar">
           <button
-            className={showLayerPanel ? "roundIcon active" : "roundIcon"}
-            title="Map layer toggle"
-            onClick={() => setShowLayerPanel((value) => !value)}
+            className="roundIcon themeToggle"
+            title="Dark and light mode selector"
+            onClick={() => setThemeMode((value) => value === "light" ? "dark" : "light")}
           >
-            <MapIcon size={24} />
+            <Sun size={24} />
           </button>
           <label className="levelSelect" aria-label="Level select">
             <span>{formatMapName(selectedMap)}</span>
@@ -457,13 +417,10 @@ export function App() {
               {manifest?.maps.map((item) => <option key={item.id} value={item.id}>{formatMapName(item.id)}</option>)}
             </select>
           </label>
-          <button
-            className="roundIcon"
-            title="Dark and light mode selector"
-            onClick={() => setThemeMode((value) => value === "light" ? "dark" : "light")}
-          >
-            <Sun size={24} />
-          </button>
+          <label className="floatingUpload" title="Upload dataset" aria-label="Upload dataset">
+            <Upload size={18} />
+            <input type="file" multiple onChange={handleUpload} />
+          </label>
         </header>
 
         {showLayerPanel && (
@@ -486,12 +443,6 @@ export function App() {
           </div>
         )}
 
-        <label className="floatingUpload">
-          <Upload size={17} />
-          Upload
-          <input type="file" multiple onChange={handleUpload} />
-        </label>
-
         <div
           className="mapShell"
           ref={mapShellRef}
@@ -507,6 +458,13 @@ export function App() {
                 <canvas ref={canvasRef} className="overlay" />
               </div>
               <div className="mapTools" aria-label="Map tools" onPointerDown={(event) => event.stopPropagation()}>
+                <button
+                  className={showLayerPanel ? "active" : ""}
+                  title="Map layers"
+                  onClick={() => setShowLayerPanel((value) => !value)}
+                >
+                  <MapIcon size={16} />
+                </button>
                 <div className="zoomGroup">
                   <button title="Zoom in" onClick={() => updateZoom(0.18)}><Plus size={16} /></button>
                   <button title="Zoom out" onClick={() => updateZoom(-0.18)}><Minus size={16} /></button>
@@ -527,7 +485,6 @@ export function App() {
                     <i />
                   </span>
                 </button>
-                <button title="Layers" onClick={() => setShowLayerPanel((value) => !value)}><Sparkles size={16} /></button>
               </div>
             </>
           ) : (
@@ -541,9 +498,16 @@ export function App() {
           onMouseLeave={() => setTimelineVisible(false)}
         >
           <div className="floatingTimeline">
-            <span>{formatTime(time)}</span>
-            <div className="timelineRail">
-              <div className="playedProgress" style={{ width: `${(time / duration) * 100}%` }} />
+            <span className="timelineTime">{formatTime(time)}</span>
+            <div
+              className="timelineRail"
+              onPointerDown={handleTimelinePointerDown}
+              onPointerMove={handleTimelinePointerMove}
+              onPointerUp={handleTimelinePointerUp}
+              onPointerCancel={handleTimelinePointerUp}
+            >
+              <div className="playedProgress" style={{ width: `${getTimelinePercent(time, duration)}%` }} />
+              <div className="timelinePlayhead" style={{ left: `${getTimelinePercent(time, duration)}%` }} />
               <input
                 type="range"
                 min={0}
@@ -554,12 +518,8 @@ export function App() {
               />
               <div className="eventTicks">
                 {selectedEvents.map((event, index) => {
-                  const percent = (event.t / duration) * 100;
-                  const type = event.type.toLowerCase();
-                  let className = "tick";
-                  if (type.includes("kill")) className += " kill";
-                  else if (type.includes("killed")) className += " death";
-                  else if (type === "loot") className += " loot";
+                  const percent = getTimelinePercent(event.t, duration);
+                  const className = `tick ${getTimelineEventTone(event.type)}`;
                   
                   return (
                     <div 
@@ -573,7 +533,7 @@ export function App() {
                 })}
               </div>
             </div>
-            <span className="duration">{formatTime(duration)}</span>
+            <span className="timelineTime duration">{formatTime(duration)}</span>
           </div>
 
           <div className="playbackControls">
@@ -617,6 +577,118 @@ export function App() {
         )}
       </section>
     </main>
+  );
+}
+
+interface SidebarPanelProps {
+  collapsed: boolean;
+  filteredMatches: MatchSummary[];
+  manifest: Manifest | null;
+  query: string;
+  selectedDate: string;
+  selectedMatchKey: string;
+  onDateChange: (value: string) => void;
+  onQueryChange: (value: string) => void;
+  onReset: () => void;
+  onSelectMatch: (key: string) => void;
+  onToggleCollapsed: () => void;
+}
+
+function SidebarPanel({
+  collapsed,
+  filteredMatches,
+  manifest,
+  query,
+  selectedDate,
+  selectedMatchKey,
+  onDateChange,
+  onQueryChange,
+  onReset,
+  onSelectMatch,
+  onToggleCollapsed,
+}: SidebarPanelProps) {
+  const visibleMatches = filteredMatches.slice(0, 8);
+
+  return (
+    <aside className={collapsed ? "sidebar collapsed" : "sidebar"}>
+      <div className="sidebarHeader">
+        <h2>Matches</h2>
+        <div className="sidebarActions">
+          {!collapsed && (
+            <button className="sidebarIconButton danger" type="button" aria-label="Delete">
+              <Trash2 size={15} />
+            </button>
+          )}
+          <button
+            className="sidebarIconButton"
+            type="button"
+            title={collapsed ? "Expand side panel" : "Collapse side panel"}
+            onClick={onToggleCollapsed}
+          >
+            {collapsed ? <PanelRight size={15} /> : <PanelLeft size={15} />}
+          </button>
+        </div>
+      </div>
+
+      {!collapsed && (
+        <>
+          <div className="playerSegment" aria-label="Panel mode">
+            <button className="active" type="button" aria-pressed="true">
+              Matches
+            </button>
+            <button type="button" aria-pressed="false">
+              AI
+            </button>
+          </div>
+
+          <div className="matchSearchTools">
+            <label className="searchBox">
+              <Search size={14} />
+              <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search" />
+            </label>
+            <label className="dateControl">
+              <CalendarDays size={14} />
+              <span>{selectedDate === "all" ? "All dates" : formatDateLabel(selectedDate)}</span>
+              <select value={selectedDate} onChange={(event) => onDateChange(event.target.value)} aria-label="Date filter">
+                <option value="all">All dates</option>
+                {manifest?.dates.map((date) => <option key={date} value={date}>{formatDateLabel(date)}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="sidebarMatchList">
+            <div className="sidebarTableHeader">
+              <strong>Match / Player ID</strong>
+              <strong>Killed By</strong>
+            </div>
+            <div className="sidebarRows">
+              {visibleMatches.map((item) => {
+                const badge = getMatchBadge(item);
+                return (
+                  <button
+                    key={item.key}
+                    className={item.key === selectedMatchKey ? "sidebarMatchRow active" : "sidebarMatchRow"}
+                    type="button"
+                    onClick={() => onSelectMatch(item.key)}
+                  >
+                    <span className="sidebarMatchCopy">
+                      <strong>{formatMatchLabel(item)}</strong>
+                      <em>{formatMapName(item.mapId)} · {formatTime(item.durationSec)} · {formatNumber(item.pathPointCount)} pts</em>
+                    </span>
+                    <span className={`rowBadge ${badge.tone}`}>{badge.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="sidebarFooter">
+            <span>{formatNumber(manifest?.stats.diagnostics.rows_seen ?? 0)} rows</span>
+            <button type="button" onClick={onReset}>Reset</button>
+          </div>
+        </>
+      )}
+    </aside>
   );
 }
 
@@ -791,6 +863,34 @@ function formatTime(value: number) {
 
 function formatMapName(value: string) {
   return value.replace(/([a-z])([A-Z])/g, "$1 $2");
+}
+
+function formatDateLabel(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function formatMatchLabel(item: MatchSummary) {
+  return `${item.id.replace(".nakama-0", "").slice(0, 8)} · ${item.humanCount ? "Squad" : "Bot"} route`;
+}
+
+function getMatchBadge(item: MatchSummary) {
+  if ((item.eventCounts.KilledByStorm ?? 0) > 0) return { label: "Storm", tone: "storm" };
+  if (item.humanCount > 0 && item.botCount > 0) return { label: "Mixed", tone: "mixed" };
+  if (item.humanCount > 0) return { label: "Human", tone: "human" };
+  return { label: "Bot", tone: "bot" };
+}
+
+function getTimelinePercent(value: number, duration: number) {
+  if (!duration) return 0;
+  return clamp((value / duration) * 100, 0, 100);
+}
+
+function getTimelineEventTone(type: string) {
+  if (type === "KilledByStorm") return "storm";
+  if (type === "Killed" || type === "BotKilled") return "death";
+  if (type === "Kill" || type === "BotKill") return "kill";
+  return "traffic";
 }
 
 function clamp(value: number, min: number, max: number) {
