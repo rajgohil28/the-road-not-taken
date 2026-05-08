@@ -1,66 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import {
-  CalendarDays,
-  ChevronDown,
-  PanelLeft,
-  PanelRight,
-  Gauge,
-  Map as MapIcon,
-  Minus,
-  Pause,
-  Play,
-  Plus,
-  RefreshCcw,
-  Search,
-  User,
-  SkipBack,
-  SkipForward,
-  Sun,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
-import { ingestRawParquetFiles } from "./dataIngest";
-import type { HeatmapMode, JourneyEvent, Manifest, MatchPayload, MatchSummary, Participant } from "./types";
-
-const MAP_SIZE = 1024;
-const MIN_ZOOM = 1.5;
-const MAX_ZOOM = 8;
-const SPEED_OPTIONS = [0.25, 0.5, 1, 1.5];
-const EVENT_COLORS: Record<string, string> = {
-  Kill: "#ff405c",
-  Killed: "#ffd166",
-  BotKill: "#ff8c42",
-  BotKilled: "#2dd4bf",
-  KilledByStorm: "#a78bfa",
-  Loot: "#7dd3fc",
-};
-
-const HEATMAP_OPTIONS: Array<{ value: HeatmapMode; label: string; image?: string }> = [
-  { value: "traffic", label: "Traffic", image: "/images/traffick-map.png" },
-  { value: "kills", label: "Kills", image: "/images/kill-map.png" },
-  { value: "deaths", label: "Deaths" },
-  { value: "storm", label: "Storm", image: "/images/storm-map.png" },
-  { value: "loot", label: "Loot", image: "/images/loot-map.png" },
-  { value: "off", label: "Off" },
-];
-
-interface Toggles {
-  humans: boolean;
-  bots: boolean;
-  paths: boolean;
-  events: boolean;
-}
-
-interface UploadedDataset {
-  manifest: Manifest;
-  matches: Map<string, MatchPayload>;
-}
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { HeatmapMode, JourneyEvent, Manifest, MatchPayload, Toggles } from "./types";
+import { MAP_SIZE, MIN_ZOOM, MAX_ZOOM } from "./constants";
+import { clamp, normalizeDegrees, shortestAngleDelta } from "./utils";
+import { drawPaths, drawCurrentPositions, drawEvents, drawCachedHeatmap } from "./lib/canvas";
+import { parseUploadedDataset } from "./lib/dataset";
+import { SidebarPanel } from "./components/SidebarPanel";
+import { Topbar } from "./components/Topbar";
+import { MapToolsPanel } from "./components/MapToolsPanel";
+import { PlaybackPanel } from "./components/PlaybackPanel";
+import { EventInfoCard } from "./components/EventInfoCard";
 
 export function App() {
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [match, setMatch] = useState<MatchPayload | null>(null);
-  const [uploadedDataset, setUploadedDataset] = useState<UploadedDataset | null>(null);
+  const [uploadedDataset, setUploadedDataset] = useState<{ manifest: Manifest; matches: Map<string, MatchPayload> } | null>(null);
   const [uploadStatus, setUploadStatus] = useState("Bundled dataset loaded from public/data.");
   const [selectedMap, setSelectedMap] = useState("AmbroseValley");
   const [selectedDate, setSelectedDate] = useState("all");
@@ -415,27 +368,36 @@ export function App() {
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
       />
 
+      {showMobileSheet && (
+        <>
+          <div className="mobileSheetOverlay" onClick={() => setShowMobileSheet(false)} />
+          <SidebarPanel
+            collapsed={false}
+            filteredMatches={filteredMatches}
+            manifest={manifest}
+            query={query}
+            selectedDate={selectedDate}
+            selectedMatchKey={selectedMatchKey}
+            onDateChange={setSelectedDate}
+            onQueryChange={setQuery}
+            onReset={loadBundledDataset}
+            onSelectMatch={setSelectedMatchKey}
+            onToggleCollapsed={() => {}}
+            isMobileSheet={true}
+            onCloseSheet={() => setShowMobileSheet(false)}
+          />
+        </>
+      )}
+
       <section className="workspace">
-        <header className="topbar">
-          <button
-            className="roundIcon themeToggle"
-            data-tooltip="Dark and light mode selector"
-            onClick={() => setThemeMode((value) => value === "light" ? "dark" : "light")}
-          >
-            <Sun size={24} />
-          </button>
-          <label className="levelSelect" aria-label="Level select">
-            <span>{formatMapName(selectedMap)}</span>
-            <ChevronDown size={18} />
-            <select value={selectedMap} onChange={(event) => setSelectedMap(event.target.value)}>
-              {manifest?.maps.map((item) => <option key={item.id} value={item.id}>{formatMapName(item.id)}</option>)}
-            </select>
-          </label>
-          <label className="floatingUpload" data-tooltip="Upload dataset" aria-label="Upload dataset">
-            <Upload size={18} />
-            <input type="file" multiple onChange={handleUpload} />
-          </label>
-        </header>
+        <Topbar
+          themeMode={themeMode}
+          onToggleTheme={() => setThemeMode((value) => value === "light" ? "dark" : "light")}
+          selectedMap={selectedMap}
+          onSelectMap={setSelectedMap}
+          manifest={manifest}
+          onUpload={handleUpload}
+        />
 
         <div
           className="mapShell"
@@ -451,629 +413,49 @@ export function App() {
                 <img className="minimap" src={`/minimaps/${mapImage}`} alt="" draggable={false} onLoad={draw} />
                 <canvas ref={canvasRef} className="overlay" />
               </div>
-              <div className="mapTools" aria-label="Map tools" onPointerDown={(event) => event.stopPropagation()}>
-                <div style={{ position: "relative" }}>
-                  <button
-                    className={showLayerPanel ? "active" : ""}
-                    data-tooltip="Map layers"
-                    onClick={() => setShowLayerPanel((value) => !value)}
-                  >
-                    <MapIcon size={16} />
-                  </button>
-                  {showLayerPanel && (
-                    <div className="modeCards" aria-label="Map layer modes">
-                      {HEATMAP_OPTIONS.filter((option) => option.image).map((option) => (
-                        <button
-                          key={option.value}
-                          className={heatmap === option.value ? "modeCard active" : "modeCard"}
-                          type="button"
-                          aria-pressed={heatmap === option.value}
-                          onClick={() => setHeatmap(option.value)}
-                        >
-                          <img className="modePreview" src={option.image} alt="" draggable={false} />
-                          <strong>{option.label}</strong>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="zoomGroup">
-                  <button data-tooltip="Zoom in" onClick={() => updateZoom(0.18)}><Plus size={16} /></button>
-                  <button data-tooltip="Zoom out" onClick={() => updateZoom(-0.18)}><Minus size={16} /></button>
-                </div>
-                <button
-                  className="compassControl"
-                  data-tooltip="Drag to rotate map"
-                  onPointerDown={handleCompassPointerDown}
-                  onPointerMove={handleCompassPointerMove}
-                  onPointerUp={handleCompassPointerUp}
-                  onPointerCancel={handleCompassPointerUp}
-                >
-                  <span className="compassRose" style={{ transform: `rotate(${mapView.rotation}deg)` }}>
-                    <b className="north">N</b>
-                    <b className="east">E</b>
-                    <b className="south">S</b>
-                    <b className="west">W</b>
-                    <i />
-                  </span>
-                </button>
-              </div>
+              <MapToolsPanel
+                showLayerPanel={showLayerPanel}
+                onToggleLayerPanel={() => setShowLayerPanel((value) => !value)}
+                heatmap={heatmap}
+                onSelectHeatmap={setHeatmap}
+                onZoomIn={() => updateZoom(0.18)}
+                onZoomOut={() => updateZoom(-0.18)}
+                rotation={mapView.rotation}
+                onCompassPointerDown={handleCompassPointerDown}
+                onCompassPointerMove={handleCompassPointerMove}
+                onCompassPointerUp={handleCompassPointerUp}
+              />
             </>
           ) : (
             <div className="emptyState">Run preprocessing to load map data.</div>
           )}
         </div>
 
-        <div
-          className={timelineVisible ? "bottomPanels timeline-visible" : "bottomPanels"}
-          onMouseEnter={() => setTimelineVisible(true)}
-          onMouseLeave={() => setTimelineVisible(false)}
-        >
-          <div className="floatingTimeline">
-            <span className="timelineTime">{formatTime(time)}</span>
-            <div
-              className="timelineRail"
-              onPointerDown={handleTimelinePointerDown}
-              onPointerMove={handleTimelinePointerMove}
-              onPointerUp={handleTimelinePointerUp}
-              onPointerCancel={handleTimelinePointerUp}
-            >
-              <div className="playedProgress" style={{ width: `${getTimelinePercent(time, duration)}%` }} />
-              <div className="timelinePlayhead" style={{ left: `${getTimelinePercent(time, duration)}%` }} />
-              <input
-                type="range"
-                min={0}
-                max={Math.max(0.001, duration)}
-                step={duration < 1 ? 0.001 : 0.25}
-                value={Math.min(time, duration)}
-                onChange={(event) => setTime(Number(event.target.value))}
-              />
-              <div className="eventTicks">
-                {selectedEvents.map((event, index) => {
-                  const percent = getTimelinePercent(event.t, duration);
-                  const className = `tick ${getTimelineEventTone(event.type)}`;
-                  
-                  return (
-                    <div 
-                      key={index} 
-                      className={className} 
-                      style={{ left: `${percent}%` }}
-                      onMouseEnter={() => setHoveredEvent(event)}
-                      onMouseLeave={() => setHoveredEvent(null)}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-            <span className="timelineTime duration">{formatTime(duration)}</span>
-          </div>
+        <PlaybackPanel
+          timelineVisible={timelineVisible}
+          onMouseEnterTimeline={() => setTimelineVisible(true)}
+          onMouseLeaveTimeline={() => setTimelineVisible(false)}
+          time={time}
+          duration={duration}
+          onTimelinePointerDown={handleTimelinePointerDown}
+          onTimelinePointerMove={handleTimelinePointerMove}
+          onTimelinePointerUp={handleTimelinePointerUp}
+          onTimeChange={setTime}
+          selectedEvents={selectedEvents}
+          onHoverEvent={setHoveredEvent}
+          onOpenMobileSettings={() => setShowMobileSheet(true)}
+          playing={playing}
+          onTogglePlay={() => setPlaying((value) => !value)}
+          onReset={() => setTime(0)}
+          onStepBack={stepBack}
+          onStepForward={stepForward}
+          hasMatch={!!match}
+          playbackSpeed={playbackSpeed}
+          onSpeedChange={setPlaybackSpeed}
+        />
 
-          <div className="playbackControls">
-            <div className="transportGroup">
-              <button className={`playButton ${playing ? "active" : ""}`} onClick={() => setPlaying((value) => !value)} disabled={!match} title={playing ? "Pause" : "Play"}>
-                {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-              </button>
-              <button className="iconButton" onClick={() => setTime(0)} disabled={!match} data-tooltip="Reset">
-                <RefreshCcw size={18} />
-              </button>
-              <button className="iconButton" onClick={stepBack} disabled={!match} data-tooltip="Step Back">
-                <SkipBack size={18} />
-              </button>
-              <button className="iconButton" onClick={stepForward} disabled={!match} data-tooltip="Step Forward">
-                <SkipForward size={18} />
-              </button>
-            </div>
-            <label className="speedControl">
-              <Gauge size={14} />
-              <span>{playbackSpeed.toFixed(1)}x</span>
-              <select value={playbackSpeed} onChange={(event) => setPlaybackSpeed(Number(event.target.value))}>
-                {SPEED_OPTIONS.map((speed) => <option key={speed} value={speed}>{speed.toFixed(1)}x</option>)}
-              </select>
-            </label>
-          </div>
-        </div>
-
-        {hoveredEvent && (
-          <div className="eventInfoCard">
-            <div className="eventHeader">
-              <span className={`eventBadge ${hoveredEvent.type.toLowerCase().includes("kill") ? "kill" : hoveredEvent.type.toLowerCase().includes("killed") ? "death" : "loot"}`}>
-                {hoveredEvent.type}
-              </span>
-              <span className="eventTime">{formatTime(hoveredEvent.t)}</span>
-            </div>
-            <div className="eventBody">
-              <strong>{hoveredEvent.actorType === "human" ? "Human" : "Bot"}</strong>
-              <span>{hoveredEvent.userId.slice(0, 12)}...</span>
-            </div>
-          </div>
-        )}
+        <EventInfoCard event={hoveredEvent} />
       </section>
     </main>
   );
-}
-
-interface SidebarPanelProps {
-  collapsed: boolean;
-  filteredMatches: MatchSummary[];
-  manifest: Manifest | null;
-  query: string;
-  selectedDate: string;
-  selectedMatchKey: string;
-  onDateChange: (value: string) => void;
-  onQueryChange: (value: string) => void;
-  onReset: () => void;
-  onSelectMatch: (key: string) => void;
-  onToggleCollapsed: () => void;
-  isMobileSheet?: boolean;
-  onCloseSheet?: () => void;
-}
-
-function SidebarPanel({
-  collapsed,
-  filteredMatches,
-  manifest,
-  query,
-  selectedDate,
-  selectedMatchKey,
-  onDateChange,
-  onQueryChange,
-  onReset,
-  onSelectMatch,
-  onToggleCollapsed,
-  isMobileSheet,
-  onCloseSheet,
-}: SidebarPanelProps) {
-  const [activeTab, setActiveTab] = useState<"Matches" | "AI">("Matches");
-  const visibleMatches = filteredMatches.slice(0, 8);
-
-  const isCollapsed = isMobileSheet ? false : collapsed;
-  const className = isMobileSheet ? "mobileSheet" : (isCollapsed ? "sidebar collapsed" : "sidebar");
-
-  return (
-    <aside className={className}>
-      {isMobileSheet && (
-        <div className="mobileSheetHandle" onClick={onCloseSheet} />
-      )}
-      <div className="sidebarHeader">
-        <h2>{activeTab === "Matches" ? "Matches" : "AI Assistant"}</h2>
-        <div className="sidebarActions">
-          {!isCollapsed && (
-            <button className="sidebarIconButton danger" type="button" aria-label="Delete" data-tooltip="Delete">
-              <Trash2 size={15} />
-            </button>
-          )}
-          {!isMobileSheet && (
-            <button
-              className="sidebarIconButton"
-              type="button"
-              data-tooltip={isCollapsed ? "Expand side panel" : "Collapse side panel"}
-              onClick={onToggleCollapsed}
-            >
-              {isCollapsed ? <PanelRight size={15} /> : <PanelLeft size={15} />}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {!isCollapsed && (
-        <>
-          <div className="playerSegment" aria-label="Panel mode">
-            <button
-              className={activeTab === "Matches" ? "active" : ""}
-              type="button"
-              aria-pressed={activeTab === "Matches"}
-              onClick={() => setActiveTab("Matches")}
-            >
-              Matches
-            </button>
-            <button
-              className={activeTab === "AI" ? "active" : ""}
-              type="button"
-              aria-pressed={activeTab === "AI"}
-              onClick={() => setActiveTab("AI")}
-            >
-              AI
-            </button>
-          </div>
-
-          {activeTab === "Matches" ? (
-            <>
-              <div className="matchSearchTools">
-                <label className="searchBox">
-                  <Search size={14} />
-                  <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search" />
-                </label>
-                <label className="dateControl">
-                  <CalendarDays size={14} />
-                  <span>{selectedDate === "all" ? "All dates" : formatDateLabel(selectedDate)}</span>
-                  <select value={selectedDate} onChange={(event) => onDateChange(event.target.value)} aria-label="Date filter">
-                    <option value="all">All dates</option>
-                    {manifest?.dates.map((date) => <option key={date} value={date}>{formatDateLabel(date)}</option>)}
-                  </select>
-                </label>
-              </div>
-
-              <div className="sidebarMatchList">
-                <div className="sidebarTableHeader">
-                  <strong>Match / Player ID</strong>
-                  <strong>Killed By</strong>
-                </div>
-                <div className="sidebarRows">
-                  {visibleMatches.map((item) => {
-                    const badge = getMatchBadge(item);
-                    return (
-                      <button
-                        key={item.key}
-                        className={item.key === selectedMatchKey ? "sidebarMatchRow active" : "sidebarMatchRow"}
-                        type="button"
-                        onClick={() => onSelectMatch(item.key)}
-                      >
-                        <span className="sidebarMatchCopy">
-                          <strong>{formatMatchLabel(item)}</strong>
-                          <em>{formatMapName(item.mapId)} · {formatTime(item.durationSec)} · {formatNumber(item.pathPointCount)} pts</em>
-                        </span>
-                        <span className={`rowBadge ${badge.tone}`}>{badge.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="sidebarFooter">
-                <span>{formatNumber(manifest?.stats.diagnostics.rows_seen ?? 0)} rows</span>
-                <button type="button" onClick={onReset}>Reset</button>
-              </div>
-            </>
-          ) : (
-            <AIChat />
-          )}
-        </>
-      )}
-    </aside>
-  );
-}
-
-function drawPaths(ctx: CanvasRenderingContext2D, participants: Participant[], time: number, scale: number, toggles: Toggles) {
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  for (const participant of participants) {
-    if (!actorVisible(participant.type, toggles)) continue;
-    let started = false;
-    ctx.strokeStyle = participant.type === "human" ? "rgba(248,250,252,.62)" : "rgba(56,189,248,.38)";
-    ctx.lineWidth = participant.type === "human" ? 2.2 : 1.4;
-    ctx.beginPath();
-    for (const point of participant.path) {
-      if (point[0] > time) break;
-      if (!started) {
-        ctx.moveTo(point[1] * scale, point[2] * scale);
-        started = true;
-      } else {
-        ctx.lineTo(point[1] * scale, point[2] * scale);
-      }
-    }
-    if (started) ctx.stroke();
-  }
-}
-
-function drawCurrentPositions(ctx: CanvasRenderingContext2D, participants: Participant[], time: number, scale: number, toggles: Toggles) {
-  for (const participant of participants) {
-    if (!actorVisible(participant.type, toggles)) continue;
-    const point = latestPoint(participant.path, time);
-    if (!point) continue;
-    ctx.beginPath();
-    ctx.fillStyle = participant.type === "human" ? "#ffffff" : "#38bdf8";
-    ctx.strokeStyle = "rgba(15,23,42,.9)";
-    ctx.lineWidth = 2;
-    ctx.arc(point[1] * scale, point[2] * scale, participant.type === "human" ? 4.6 : 3.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-  }
-}
-
-function drawEvents(ctx: CanvasRenderingContext2D, events: JourneyEvent[], time: number, scale: number, toggles: Toggles) {
-  for (const event of events) {
-    if (event.t > time || !actorVisible(event.actorType, toggles)) continue;
-    const x = event.px * scale;
-    const y = event.py * scale;
-    ctx.beginPath();
-    ctx.fillStyle = EVENT_COLORS[event.type] ?? "#ffffff";
-    ctx.strokeStyle = "rgba(2,6,23,.85)";
-    ctx.lineWidth = 2;
-    if (event.type === "Loot") {
-      ctx.rect(x - 4, y - 4, 8, 8);
-    } else {
-      ctx.arc(x, y, event.type === "KilledByStorm" ? 6 : 5, 0, Math.PI * 2);
-    }
-    ctx.fill();
-    ctx.stroke();
-  }
-}
-
-function drawCachedHeatmap(
-  ctx: CanvasRenderingContext2D,
-  match: MatchPayload,
-  mode: HeatmapMode,
-  scale: number,
-  toggles: Toggles,
-  width: number,
-  height: number,
-  ratio: number,
-  cacheRef: MutableRefObject<{ key: string; canvas: HTMLCanvasElement | null }>,
-) {
-  if (mode === "off") {
-    cacheRef.current = { key: "", canvas: null };
-    return;
-  }
-
-  const key = [
-    match.key,
-    mode,
-    Math.round(width),
-    Math.round(height),
-    ratio,
-    toggles.humans,
-    toggles.bots,
-  ].join(":");
-
-  if (cacheRef.current.key !== key || !cacheRef.current.canvas) {
-    const cache = document.createElement("canvas");
-    cache.width = Math.round(width * ratio);
-    cache.height = Math.round(height * ratio);
-    const cacheCtx = cache.getContext("2d");
-    if (cacheCtx) {
-      cacheCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      drawHeatmap(cacheCtx, match, mode, scale, toggles);
-    }
-    cacheRef.current = { key, canvas: cache };
-  }
-
-  if (cacheRef.current.canvas) {
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(cacheRef.current.canvas, 0, 0);
-    ctx.restore();
-  }
-}
-
-function drawHeatmap(ctx: CanvasRenderingContext2D, match: MatchPayload, mode: HeatmapMode, scale: number, toggles: Toggles) {
-  if (mode === "off") return;
-  const points: Array<[number, number]> = [];
-  if (mode === "traffic") {
-    for (const participant of match.participants) {
-      if (!actorVisible(participant.type, toggles)) continue;
-      for (const point of participant.path) points.push([point[1], point[2]]);
-    }
-  } else {
-    for (const event of match.events) {
-      if (!actorVisible(event.actorType, toggles)) continue;
-      if (mode === "kills" && !["Kill", "BotKill"].includes(event.type)) continue;
-      if (mode === "deaths" && !["Killed", "BotKilled", "KilledByStorm"].includes(event.type)) continue;
-      if (mode === "storm" && event.type !== "KilledByStorm") continue;
-      if (mode === "loot" && event.type !== "Loot") continue;
-      points.push([event.px, event.py]);
-    }
-  }
-
-  if (points.length === 0) return;
-
-  const particleRadius = 26 * scale;
-  const particleSize = particleRadius * 2;
-  const particle = document.createElement("canvas");
-  particle.width = particleSize;
-  particle.height = particleSize;
-  const pctx = particle.getContext("2d");
-  if (pctx) {
-    const gradient = pctx.createRadialGradient(particleRadius, particleRadius, 0, particleRadius, particleRadius, particleRadius);
-    gradient.addColorStop(0, "rgba(255, 90, 95, .28)");
-    gradient.addColorStop(0.42, "rgba(255, 209, 102, .16)");
-    gradient.addColorStop(1, "rgba(255, 209, 102, 0)");
-    pctx.fillStyle = gradient;
-    pctx.fillRect(0, 0, particleSize, particleSize);
-  }
-
-  for (const [px, py] of points) {
-    ctx.drawImage(particle, px * scale - particleRadius, py * scale - particleRadius, particleSize, particleSize);
-  }
-}
-
-function latestPoint(path: Participant["path"], time: number) {
-  let best: Participant["path"][number] | null = null;
-  for (const point of path) {
-    if (point[0] > time) break;
-    best = point;
-  }
-  return best;
-}
-
-function actorVisible(type: "human" | "bot", toggles: Toggles) {
-  return type === "human" ? toggles.humans : toggles.bots;
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-US").format(value);
-}
-
-function formatTime(value: number) {
-  if (value < 60) {
-    return `${value.toFixed(value < 10 ? 2 : 1)}s`;
-  }
-  const minutes = Math.floor(value / 60);
-  const seconds = Math.floor(value % 60).toString().padStart(2, "0");
-  return `${minutes}:${seconds}`;
-}
-
-function formatMapName(value: string) {
-  return value.replace(/([a-z])([A-Z])/g, "$1 $2");
-}
-
-function formatDateLabel(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
-}
-
-function formatMatchLabel(item: MatchSummary) {
-  return `${item.id.replace(".nakama-0", "").slice(0, 8)} · ${item.humanCount ? "Squad" : "Bot"} route`;
-}
-
-function getMatchBadge(item: MatchSummary) {
-  if ((item.eventCounts.KilledByStorm ?? 0) > 0) return { label: "Storm", tone: "storm" };
-  if (item.humanCount > 0 && item.botCount > 0) return { label: "Mixed", tone: "mixed" };
-  if (item.humanCount > 0) return { label: "Human", tone: "human" };
-  return { label: "Bot", tone: "bot" };
-}
-
-function getTimelinePercent(value: number, duration: number) {
-  if (!duration) return 0;
-  return clamp((value / duration) * 100, 0, 100);
-}
-
-function getTimelineEventTone(type: string) {
-  if (type === "KilledByStorm") return "storm";
-  if (type === "Killed" || type === "BotKilled") return "death";
-  if (type === "Kill" || type === "BotKill") return "kill";
-  return "traffic";
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function normalizeDegrees(value: number) {
-  return ((value % 360) + 360) % 360;
-}
-
-function shortestAngleDelta(a: number, b: number) {
-  return ((a - b + 540) % 360) - 180;
-}
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant" | "tool";
-  content: string;
-}
-
-function AIChat() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputValue, setInputValue] = useState("");
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
-  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
-  const [tempKey, setTempKey] = useState("");
-
-  const handleInputFocus = () => {
-    if (!apiKey) {
-      setIsApiKeyModalOpen(true);
-    }
-  };
-
-  const handleSaveKey = () => {
-    if (tempKey.trim()) {
-      localStorage.setItem("gemini_api_key", tempKey.trim());
-      setApiKey(tempKey.trim());
-      setIsApiKeyModalOpen(false);
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim() || !apiKey) return;
-
-    const newMsg: ChatMessage = { id: Date.now().toString(), role: "user", content: inputValue.trim() };
-    setMessages((prev) => [...prev, newMsg]);
-    setInputValue("");
-    
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now().toString() + "_tool", role: "tool", content: "tool_call: get_map_stats" },
-        { id: Date.now().toString() + "_ast", role: "assistant", content: "I am ready to help you analyze this map using Gemini 3 Flash. Please provide the system prompt." }
-      ]);
-    }, 1000);
-  };
-
-  return (
-    <div className="aiChatContainer">
-      <div className="aiChatMessages">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`aiMessageRow ${msg.role}`}>
-            {msg.role === "tool" ? (
-              <span className="aiToolText">{msg.content}</span>
-            ) : (
-              <div className={`aiMessageBubble ${msg.role}`}>
-                {msg.content}
-              </div>
-            )}
-          </div>
-        ))}
-        {messages.length === 0 && (
-          <div className="aiEmptyState">Ask Gemini about the map...</div>
-        )}
-      </div>
-
-      <form className="aiChatInputArea" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          placeholder="Message Gemini..."
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onFocus={handleInputFocus}
-        />
-        <button type="submit" disabled={!inputValue.trim()}>Send</button>
-      </form>
-
-      {isApiKeyModalOpen && (
-        <div className="apiKeyModalOverlay">
-          <div className="apiKeyModal">
-            <h3>Gemini API Key</h3>
-            <p>You need a Gemini API key to use the AI Assistant. It will be saved locally.</p>
-            <input 
-              type="password" 
-              placeholder="AIzaSy..." 
-              value={tempKey}
-              onChange={(e) => setTempKey(e.target.value)}
-            />
-            <div className="apiKeyModalActions">
-              <button type="button" onClick={() => setIsApiKeyModalOpen(false)}>Cancel</button>
-              <button type="button" className="primary" onClick={handleSaveKey}>Save Key</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-async function parseUploadedDataset(files: File[]): Promise<UploadedDataset> {
-  const manifestFile = files.find((file) => file.name === "manifest.json" || file.webkitRelativePath.endsWith("manifest.json"));
-  if (!manifestFile) {
-    return ingestRawParquetFiles(files);
-  }
-  if (!manifestFile) {
-    throw new Error("Upload the processed data folder that contains manifest.json and matches/*.json.");
-  }
-
-  const manifest = JSON.parse(await manifestFile.text()) as Manifest;
-  if (!Array.isArray(manifest.matches) || !Array.isArray(manifest.maps)) {
-    throw new Error("manifest.json does not look like a LILA processed dataset.");
-  }
-
-  const matchFiles = files.filter((file) => {
-    const path = file.webkitRelativePath || file.name;
-    return path.includes("/matches/") && path.endsWith(".json");
-  });
-  if (!matchFiles.length) {
-    throw new Error("No match JSON files found. Upload the folder that includes matches/*.json.");
-  }
-
-  const matches = new Map<string, MatchPayload>();
-  await Promise.all(matchFiles.map(async (file) => {
-    const payload = JSON.parse(await file.text()) as MatchPayload;
-    if (payload.key) matches.set(payload.key, payload);
-  }));
-
-  const missing = manifest.matches.filter((summary) => !matches.has(summary.key)).slice(0, 3);
-  if (missing.length) {
-    throw new Error(`Uploaded dataset is incomplete. Missing match JSON for ${missing.map((item) => item.key).join(", ")}.`);
-  }
-
-  return { manifest, matches };
 }

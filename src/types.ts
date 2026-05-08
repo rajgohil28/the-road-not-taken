@@ -63,3 +63,21 @@ export interface MatchPayload {
   participants: Participant[];
   events: JourneyEvent[];
 }
+
+export interface Toggles {
+  humans: boolean;
+  bots: boolean;
+  paths: boolean;
+  events: boolean;
+}
+
+export interface UploadedDataset {
+  manifest: Manifest;
+  matches: Map<string, MatchPayload>;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "tool";
+  content: string;
+}
