@@ -217,6 +217,7 @@ def build_outputs(matches: dict[str, Any], diagnostics: Counter, max_path_points
         map_counts[match["mapId"]] += 1
         date_counts[match["date"]] += 1
         participants.sort(key=lambda p: (p["type"], p["userId"]))
+        primary_actor_type = next((player["type"] for player in participants if player["type"] == "human"), participants[0]["type"] if participants else "bot")
         all_events.sort(key=lambda event: event["t"])
 
         match_payloads[key] = {
@@ -225,6 +226,7 @@ def build_outputs(matches: dict[str, Any], diagnostics: Counter, max_path_points
             "date": match["date"],
             "mapId": match["mapId"],
             "durationSec": round(duration, 2),
+            "primaryActorType": primary_actor_type,
             "participants": participants,
             "events": all_events,
         }
@@ -237,6 +239,7 @@ def build_outputs(matches: dict[str, Any], diagnostics: Counter, max_path_points
                 "durationSec": round(duration, 2),
                 "humanCount": human_count,
                 "botCount": bot_count,
+                "primaryActorType": primary_actor_type,
                 "eventCounts": event_counts,
                 "pathPointCount": path_points,
             }

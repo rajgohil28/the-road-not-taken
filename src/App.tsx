@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HeatmapMode, JourneyEvent, Manifest, MatchPayload, Toggles } from "./types";
+import type { ActorType, HeatmapMode, JourneyEvent, Manifest, MatchPayload, Toggles } from "./types";
 import { MAP_SIZE, MIN_ZOOM, MAX_ZOOM, HEATMAP_OPTIONS } from "./constants";
 import { clamp, normalizeDegrees, shortestAngleDelta } from "./utils";
 import { drawPaths, drawCurrentPositions, drawEvents, drawCachedHeatmap } from "./lib/canvas";
 import { parseUploadedDataset } from "./lib/dataset";
+import { createLilaAiTools } from "./lib/aiTools";
 import { SidebarPanel } from "./components/SidebarPanel";
 import { Topbar } from "./components/Topbar";
 import { MapToolsPanel } from "./components/MapToolsPanel";
@@ -29,6 +30,7 @@ export function App() {
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [heatmap, setHeatmap] = useState<HeatmapMode>("traffic");
+  const [matchActorTypes, setMatchActorTypes] = useState<Record<string, ActorType>>({});
   const [showLayerPanel, setShowLayerPanel] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showMobileSheet, setShowMobileSheet] = useState(false);
@@ -186,6 +188,33 @@ export function App() {
     }
   }, [manifest, selectedMatchKey, uploadedDataset]);
 
+  const visibleMatches = useMemo(() => filteredMatches.slice(0, 8), [filteredMatches]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const missing = visibleMatches.filter((item) => !matchActorTypes[item.key] && !item.primaryActorType);
+    if (!missing.length) return;
+
+    Promise.all(missing.map(async (item) => {
+      const payload = uploadedDataset?.matches.get(item.key) ??
+        await fetch(`/data/matches/${item.key}.json`).then((response) => response.ok ? response.json() as Promise<MatchPayload> : null).catch(() => null);
+      return [item.key, getPrimaryActorType(payload)] as const;
+    })).then((entries) => {
+      if (cancelled) return;
+      setMatchActorTypes((current) => {
+        const next = { ...current };
+        for (const [key, actorType] of entries) {
+          if (actorType) next[key] = actorType;
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [matchActorTypes, uploadedDataset, visibleMatches]);
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -258,6 +287,54 @@ export function App() {
     () => match?.events.filter((event) => !selectedPlayerId || event.userId === selectedPlayerId) ?? [],
     [match, selectedPlayerId],
   );
+
+  useEffect(() => {
+    const tools = createLilaAiTools({
+      manifest,
+      match,
+      selectedMap,
+      selectedDate,
+      selectedMatchKey,
+      selectedPlayerId,
+      heatmap,
+      time,
+      duration,
+      playbackSpeed,
+      playing,
+      mapView,
+      toggles,
+      canvasRef,
+      setSelectedMap,
+      setSelectedDate,
+      setSelectedMatchKey,
+      setQuery,
+      setSelectedPlayerId,
+      setPlaying,
+      setTime,
+      setPlaybackSpeed,
+      setHeatmap,
+      setMapView,
+      setToggles,
+    });
+    window.lilaTools = tools;
+    return () => {
+      if (window.lilaTools === tools) delete window.lilaTools;
+    };
+  }, [
+    duration,
+    heatmap,
+    manifest,
+    mapView,
+    match,
+    playbackSpeed,
+    playing,
+    selectedDate,
+    selectedMap,
+    selectedMatchKey,
+    selectedPlayerId,
+    time,
+    toggles,
+  ]);
 
   useEffect(() => {
     if (!match?.participants.length) {
@@ -481,6 +558,8 @@ export function App() {
         query={query}
         selectedDate={selectedDate}
         selectedMatchKey={selectedMatchKey}
+        selectedPlayerId={selectedPlayerId}
+        matchActorTypes={matchActorTypes}
         onDateChange={setSelectedDate}
         onQueryChange={setQuery}
         onReset={handleResetWorkspace}
@@ -499,6 +578,8 @@ export function App() {
             query={query}
             selectedDate={selectedDate}
             selectedMatchKey={selectedMatchKey}
+            selectedPlayerId={selectedPlayerId}
+            matchActorTypes={matchActorTypes}
             onDateChange={setSelectedDate}
             onQueryChange={setQuery}
             onReset={handleResetWorkspace}
@@ -594,4 +675,9 @@ export function App() {
       </section>
     </main>
   );
+}
+
+function getPrimaryActorType(payload: MatchPayload | null): ActorType | null {
+  if (!payload?.participants.length) return null;
+  return payload.participants.find((participant) => participant.type === "human")?.type ?? payload.participants[0].type;
 }
