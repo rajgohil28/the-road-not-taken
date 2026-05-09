@@ -2,14 +2,26 @@ import type { MutableRefObject } from "react";
 import type { HeatmapMode, JourneyEvent, MatchPayload, Participant, Toggles } from "../types";
 import { EVENT_COLORS } from "../constants";
 
-export function drawPaths(ctx: CanvasRenderingContext2D, participants: Participant[], time: number, scale: number, toggles: Toggles) {
+export function drawPaths(ctx: CanvasRenderingContext2D, participants: Participant[], time: number, scale: number, toggles: Toggles, zoom: number = 1) {
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
+  const zScale = Math.max(1, Math.sqrt(zoom));
   for (const participant of participants) {
     if (!actorVisible(participant.type, toggles)) continue;
     let started = false;
-    ctx.strokeStyle = participant.type === "human" ? "rgba(248,250,252,.62)" : "rgba(56,189,248,.38)";
-    ctx.lineWidth = participant.type === "human" ? 2.2 : 1.4;
+    
+    if (participant.type === "human") {
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+      ctx.lineWidth = 2.5 / zScale;
+      ctx.shadowColor = "rgba(255, 255, 255, 0.6)";
+      ctx.shadowBlur = 8 / zScale;
+    } else {
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
+      ctx.lineWidth = 1.5 / zScale;
+      ctx.shadowColor = "rgba(56, 189, 248, 0.4)";
+      ctx.shadowBlur = 5 / zScale;
+    }
+
     ctx.beginPath();
     for (const point of participant.path) {
       if (point[0] > time) break;
@@ -21,25 +33,46 @@ export function drawPaths(ctx: CanvasRenderingContext2D, participants: Participa
       }
     }
     if (started) ctx.stroke();
+    
+    // Reset shadow so it doesn't bleed into other draw calls
+    ctx.shadowBlur = 0;
   }
 }
 
-export function drawCurrentPositions(ctx: CanvasRenderingContext2D, participants: Participant[], time: number, scale: number, toggles: Toggles) {
+export function drawCurrentPositions(ctx: CanvasRenderingContext2D, participants: Participant[], time: number, scale: number, toggles: Toggles, zoom: number = 1) {
+  const zScale = Math.max(1, Math.sqrt(zoom));
   for (const participant of participants) {
     if (!actorVisible(participant.type, toggles)) continue;
     const point = latestPoint(participant.path, time);
     if (!point) continue;
+    
     ctx.beginPath();
-    ctx.fillStyle = participant.type === "human" ? "#ffffff" : "#38bdf8";
-    ctx.strokeStyle = "rgba(15,23,42,.9)";
-    ctx.lineWidth = 2;
-    ctx.arc(point[1] * scale, point[2] * scale, participant.type === "human" ? 4.6 : 3.6, 0, Math.PI * 2);
+    if (participant.type === "human") {
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "rgba(10, 132, 255, 0.9)"; // vivid blue rim
+      ctx.lineWidth = 2.5 / zScale;
+      ctx.shadowColor = "rgba(10, 132, 255, 0.8)";
+      ctx.shadowBlur = 12 / zScale;
+      ctx.arc(point[1] * scale, point[2] * scale, 5.5 / zScale, 0, Math.PI * 2);
+    } else {
+      ctx.fillStyle = "#38bdf8";
+      ctx.strokeStyle = "rgba(2, 6, 23, 0.9)";
+      ctx.lineWidth = 2 / zScale;
+      ctx.shadowColor = "rgba(56, 189, 248, 0.6)";
+      ctx.shadowBlur = 8 / zScale;
+      ctx.arc(point[1] * scale, point[2] * scale, 4 / zScale, 0, Math.PI * 2);
+    }
+    
     ctx.fill();
     ctx.stroke();
+    
+    // Reset shadow
+    ctx.shadowBlur = 0;
   }
 }
 
-export function drawEvents(ctx: CanvasRenderingContext2D, events: JourneyEvent[], time: number, scale: number, toggles: Toggles) {
+export function drawEvents(ctx: CanvasRenderingContext2D, events: JourneyEvent[], time: number, scale: number, toggles: Toggles, zoom: number = 1) {
+  const zScale = Math.max(1, zoom);
   for (const event of events) {
     if (event.t > time || !actorVisible(event.actorType, toggles)) continue;
     const x = event.px * scale;
@@ -47,11 +80,13 @@ export function drawEvents(ctx: CanvasRenderingContext2D, events: JourneyEvent[]
     ctx.beginPath();
     ctx.fillStyle = EVENT_COLORS[event.type] ?? "#ffffff";
     ctx.strokeStyle = "rgba(2,6,23,.85)";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 / zScale;
     if (event.type === "Loot") {
-      ctx.rect(x - 4, y - 4, 8, 8);
+      const s = 8 / zScale;
+      ctx.rect(x - s / 2, y - s / 2, s, s);
     } else {
-      ctx.arc(x, y, event.type === "KilledByStorm" ? 6 : 5, 0, Math.PI * 2);
+      const r = (event.type === "KilledByStorm" ? 6 : 5) / zScale;
+      ctx.arc(x, y, r, 0, Math.PI * 2);
     }
     ctx.fill();
     ctx.stroke();
@@ -99,7 +134,11 @@ export function drawCachedHeatmap(
   if (cacheRef.current.canvas) {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(cacheRef.current.canvas, 0, 0);
+    ctx.drawImage(
+      cacheRef.current.canvas, 
+      0, 0, cacheRef.current.canvas.width, cacheRef.current.canvas.height, 
+      0, 0, ctx.canvas.width, ctx.canvas.height
+    );
     ctx.restore();
   }
 }

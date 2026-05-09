@@ -717,20 +717,25 @@ body {
 
 .minimap {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  left: 50%;
+  top: 50%;
+  width: min(100vw, 100dvh);
+  height: min(100vw, 100dvh);
   display: block;
   object-fit: contain;
   user-select: none;
   pointer-events: none;
+  transform-origin: center;
+  will-change: transform;
 }
 
 .overlay {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  left: 50%;
+  top: 50%;
+  width: min(100vw, 100dvh);
+  height: min(100vw, 100dvh);
+  transform: translate(-50%, -50%);
   pointer-events: none;
 }
 
@@ -1471,6 +1476,7 @@ body {
 
 /* AI Chat Styles */
 .aiChatContainer {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -1679,10 +1685,38 @@ body {
   display: flex;
   gap: 8px;
   background: transparent;
+  align-items: center;
 }
 
-.app.darkMode .aiChatInputArea {
-  background: transparent;
+.aiAttachButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 17px;
+  background: rgba(0, 0, 0, 0.05);
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.aiAttachButton:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #0f172a;
+  transform: scale(1.05);
+}
+
+.app.darkMode .aiAttachButton {
+  background: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+}
+
+.app.darkMode .aiAttachButton:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
 }
 
 .aiChatInputArea input {
@@ -1702,34 +1736,102 @@ body {
   color: #f8fafc;
 }
 
-.aiChatInputArea button {
+.aiSendButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
   height: 34px;
-  padding: 0 16px;
+  padding: 0;
   border-radius: 17px;
   border: none;
   background: #0a84ff;
   color: #ffffff;
-  font-size: 13px;
-  font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.1s ease;
+  flex-shrink: 0;
 }
 
-.aiChatInputArea button:disabled {
+.aiSendButton:active {
+  transform: scale(0.95);
+}
+
+.aiSendButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+}
+
+.aiAttachmentPreview {
+  position: relative;
+  display: inline-block;
+  align-self: flex-start;
+  margin-bottom: 4px;
+}
+
+.aiAttachmentPreview img {
+  height: 60px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  object-fit: cover;
+}
+
+.app.darkMode .aiAttachmentPreview img {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.aiAttachmentPreview button {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #334155;
+  color: white;
+  border: 2px solid white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.app.darkMode .aiAttachmentPreview button {
+  background: #475569;
+  border-color: #1e1e22;
+}
+
+.aiAttachmentPreview button:hover {
+  background: #ef4444;
 }
 
 .aiChatFooter {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px 4px 4px;
-  border-top: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .app.darkMode .aiChatFooter {
-  border-top-color: rgba(148, 163, 184, 0.16);
+}
+
+.aiAttachmentPreviewList {
+  position: absolute;
+  bottom: calc(100% - 10px);
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  pointer-events: none;
+}
+
+.aiAttachmentPreviewList > * {
+  pointer-events: auto;
 }
 
 .aiPoweredBy {
@@ -1744,6 +1846,40 @@ body {
 }
 
 /* API Key Modal */
+.aiApiKeyButton {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid transparent;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.aiApiKeyButton:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #0f172a;
+  transform: scale(1.05);
+}
+
+.app.darkMode .aiApiKeyButton {
+  background: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+}
+
+.app.darkMode .aiApiKeyButton:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+}
+
 .apiKeyModalOverlay {
   position: absolute;
   inset: 0;
@@ -2354,7 +2490,7 @@ body {
   box-shadow: var(--glass-shadow-light);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  animation: pinFadeIn 0.3s ease 0.1s both;
+  animation: pinFadeIn 0.3s ease 0.1s both, pinFadeOut 0.3s ease 2.7s forwards;
   transition: transform 0.1s ease, background 0.2s ease;
   position: absolute;
   top: -42px;
@@ -2385,6 +2521,11 @@ body {
 @keyframes pinFadeIn {
   0% { transform: translateX(-50%) translateY(10px); opacity: 0; }
   100% { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+
+@keyframes pinFadeOut {
+  0% { transform: translateX(-50%) translateY(0); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-10px); opacity: 0; pointer-events: none; }
 }
 .dragOverlay span {
   background: #0a84ff;

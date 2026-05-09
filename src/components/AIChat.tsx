@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Plus, ArrowUp, X, Key } from "lucide-react";
 import type { ChatMessage } from "../types";
 import type { AiToolName } from "../lib/aiTools";
 
@@ -224,21 +225,30 @@ export function AIChat() {
   const [tempKey, setTempKey] = useState("");
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<{ id: string; dataUrl: string; mimeType: string }[]>([]);
   const [suggestions] = useState(() => shufflePrompts(SUGGESTION_PROMPTS).slice(0, 3));
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        setAttachments((prev) => [...prev, { id: crypto.randomUUID(), dataUrl, mimeType: file.type }]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
 
   useEffect(() => {
     const handler = (e: CustomEvent<{ dataUrl: string }>) => {
       const match = e.detail.dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
       if (match) {
-        // @ts-expect-error global
-        window.pendingMapImage = {
-          inlineData: {
-            mimeType: match[1],
-            data: match[2],
-          },
-        };
+        setAttachments((prev) => [...prev, { id: crypto.randomUUID(), dataUrl: e.detail.dataUrl, mimeType: match[1] }]);
         setInputValue("What is happening in this area?");
         window.dispatchEvent(new CustomEvent("OPEN_AI_TAB"));
       }
@@ -296,6 +306,9 @@ export function AIChat() {
       return;
     }
 
+    const imagesToAttach = [...attachments];
+    setAttachments([]);
+
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: prompt };
     const nextMessages = [...messages, userMessage];
     setMessages(nextMessages);
@@ -307,7 +320,7 @@ export function AIChat() {
     try {
       const response = await runGeminiConversation(apiKey, nextMessages, (toolMessage) => {
         setMessages((current) => [...current, toolMessage]);
-      });
+      }, imagesToAttach);
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: response }]);
     } catch (error) {
       const content = error instanceof Error ? error.message : "Gemini request failed.";
@@ -328,6 +341,16 @@ export function AIChat() {
 
   return (
     <div className="aiChatContainer">
+      <button 
+        className="aiApiKeyButton" 
+        type="button" 
+        onClick={() => setIsApiKeyModalOpen(true)}
+        title="Manage API Key"
+        aria-label="Manage API Key"
+      >
+        <Key size={14} />
+      </button>
+
       <div
         className="aiChatMessages"
         ref={messagesRef}
@@ -383,7 +406,30 @@ export function AIChat() {
       </div>
 
       <div className="aiChatFooter">
+        {attachments.length > 0 && (
+          <div className="aiAttachmentPreviewList">
+            {attachments.map((att) => (
+              <div key={att.id} className="aiAttachmentPreview">
+                <img src={att.dataUrl} alt="Attached" />
+                <button type="button" onClick={() => setAttachments(prev => prev.filter(a => a.id !== att.id))} title="Remove attachment">
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <form className="aiChatInputArea" onSubmit={handleSubmit}>
+          <label className="aiAttachButton" title="Attach Image">
+            <Plus size={18} />
+            <input 
+              type="file" 
+              multiple
+              accept="image/jpeg, image/png" 
+              style={{ display: "none" }} 
+              onChange={handleFileChange}
+              disabled={isThinking}
+            />
+          </label>
           <input
             type="text"
             placeholder="Message Agent..."
@@ -392,7 +438,9 @@ export function AIChat() {
             onFocus={handleInputFocus}
             disabled={isThinking}
           />
-          <button type="submit" disabled={!inputValue.trim() || isThinking}>Send</button>
+          <button type="submit" disabled={!inputValue.trim() || isThinking} className="aiSendButton" aria-label="Send">
+            <ArrowUp size={16} />
+          </button>
         </form>
         <div className="aiPoweredBy">Agent is powered by Gemini</div>
       </div>
@@ -419,31 +467,41 @@ export function AIChat() {
   );
 }
 
-async function runGeminiConversation(apiKey: string, messages: ChatMessage[], onToolMessage: (message: ChatMessage) => void) {
+async function runGeminiConversation(
+  apiKey: string, 
+  messages: ChatMessage[], 
+  onToolMessage: (message: ChatMessage) => void,
+  customImages: { dataUrl: string, mimeType: string }[] = []
+) {
   const contents = toGeminiContents(messages);
   const latestUserContent = [...contents].reverse().find((content) => content.role === "user");
   const latestPrompt = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
-  
-  let mapImage = null;
-  // @ts-expect-error global
-  if (window.pendingMapImage) {
-    // @ts-expect-error global
-    mapImage = window.pendingMapImage;
-    // @ts-expect-error global
-    window.pendingMapImage = null;
+
+  const extraImages: GeminiPart[] = [];
+
+  if (customImages.length > 0) {
+    for (const customImage of customImages) {
+      const match = customImage.dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (match) {
+        extraImages.push({
+          inlineData: {
+            mimeType: customImage.mimeType,
+            data: match[2],
+          }
+        });
+      }
+    }
   } else if (shouldAttachMapImage(latestPrompt)) {
-    mapImage = await captureCurrentMapImage();
+    const img = await captureCurrentMapImage();
+    if (img) extraImages.push(img);
   }
 
-  if (latestUserContent && mapImage) {
-    latestUserContent.parts.push(
-      mapImage,
-      { text: "Current map screenshot attached. Use it for visual terrain and landmark inference when relevant." },
-    );
+  if (latestUserContent && extraImages.length > 0) {
+    latestUserContent.parts.push(...extraImages);
+    latestUserContent.parts.push({ text: customImages.length > 0 ? "User uploaded images attached. Use them to answer the user's prompt visually." : "Current map screenshot attached. Use it for visual terrain and landmark inference when relevant." });
   }
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-    const response = await requestGemini(apiKey, contents);
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {    const response = await requestGemini(apiKey, contents);
     const modelContent = response.candidates?.[0]?.content;
     const parts = modelContent?.parts ?? [];
     const functionCalls = parts.filter(isFunctionCallPart);
