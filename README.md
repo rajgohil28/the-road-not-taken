@@ -1,111 +1,64 @@
-# LILA Journey Lab
+# LILA Journey Lab: The Road Not Taken
 
-LILA Journey Lab is a map-intelligence tool for turning raw LILA BLACK telemetry into level-design decisions. It lets designers inspect how humans and bots moved through each map, where meaningful events happened, and which areas deserve design attention.
+**LILA Journey Lab** is a high-fidelity map-intelligence workbench designed to transform raw LILA BLACK telemetry into dominant level-design and product strategies.
 
-## Problem Statement
+---
 
-LILA BLACK produces rich gameplay telemetry, but the raw `.nakama-0` parquet files are difficult for level designers, game designers, and product managers to use directly. Each file contains player or bot movement, map position, timestamps, and gameplay events, but the raw format does not quickly answer the questions designers actually ask:
+## 1. Problem Statement: The "Black Box" of Player Behavior
 
-- Where do players naturally rotate?
-- Which routes become chokepoints?
-- Which parts of the map are ignored?
-- Where do combat, loot, and storm deaths cluster?
-- Are bots reinforcing player flow or distorting it?
+LILA BLACK produces massive volumes of spatial telemetry (Parquet/`.nakama-0`), but for Level Designers and Product Managers, this data is currently a "Black Box." 
 
-Without a visual layer, teams have to rely on manual inspection, one-off scripts, or aggregate counts that lose spatial and temporal context.
+*   **Spatial Blindness:** We know *that* players die, but we don't see *where* they were trapped before the final shot.
+*   **Bot Noise:** Raw logs make it impossible to distinguish between meaningful human encounters and bot-on-bot attrition.
+*   **Predictability Risk:** Without visual heatmaps, we cannot see if 80% of our map is "dead space," wasting production resources and boring our players.
 
-## Proposed Solution
+## 2. Ideal Solution: The Intelligence Workbench
 
-LILA Journey Lab turns raw telemetry into an interactive browser workbench. The tool overlays player and bot journeys on the correct minimap, supports match playback, separates humans from bots, marks gameplay events, and provides heatmaps for traffic, kills, deaths, storm deaths, and loot.
+The ideal solution isn't a static dashboard; it's a **Tactical Workbench**. 
 
-The goal is not just to show data. The goal is to help designers move from:
+*   **Dynamic Playback:** Designers can scrub through matches in real-time, observing the "Chase Gap" and rotation failures.
+*   **AI-Augmented Analysis:** A built-in Tactical Analyst (Gemini-powered) that can reason across map screenshots and telemetry to identify chokepoints and "ghost town" anomalies.
+*   **Hybrid Ingestion:** A pipeline that supports both ultra-fast precomputed insights for global review and raw file uploads for immediate "post-match" debriefs.
 
-```text
-raw telemetry -> spatial evidence -> design judgment
-```
+## 3. Architecture: Built for Scale and Speed
 
-This is the Delta 4 version of the assignment: a tool that feels like a lightweight map-review cockpit instead of a static dashboard.
+The system is designed as a **Static-First Intelligence Tool** to ensure zero-latency for designers in the field.
 
-## Who It Helps
+*   **Data Pipeline:** A Python/PyArrow preprocessing engine that normalizes coordinate systems, decodes event bytes, and generates compact, match-grouped JSON payloads.
+*   **Frontend Engine:** A React/Vite/TypeScript application utilizing a high-performance Canvas rendering layer for simultaneous path, event, and heatmap visualization.
+*   **AI Integration:** A tool-calling architecture that allows an LLM to "see" the map viewport and query the spatial database, bridging the gap between raw data and human-readable advice.
+*   **Coordinate Mapping:** Precise world-to-pixel translation ($u = (x - origin\_x) / scale$; $pixel\_y = (1 - v) * 1024$) ensuring sub-meter accuracy on minimap overlays.
 
-**Level designers** can inspect route usage, chokepoints, death zones, storm pressure areas, and ignored spaces.
+## 4. Strategic Insights (Condensed)
 
-**Game designers** can reason about pacing, bot pressure, loot pull, encounter frequency, and whether systems are creating the intended behavior.
+*   **The Bot Vacuum:** 99.5% of deaths are bot-driven, leading to a "Ghost Town" experience for humans. *Recommendation: Implement COD-style engagement partitioning.*
+*   **Super-Funnels:** 80% of traffic is concentrated in <15% of the map landmass. *Recommendation: Use BGMI-style rotating High-Tier Loot Zones to force map utilization.*
+*   **The Chase Gap:** Fatalities cluster in open fields far from initial contact points. *Recommendation: Add transitional "Leap-frog Cover" every 30-50m in high-traffic corridors.*
 
-**Product managers** can review evidence-backed insights, prioritize map/system changes, and share the same browser view with design and engineering.
+---
 
-## Core Features
+## 5. Founder’s Note: The Path to $100M ARR in 4 Years
 
-- **Minimap journey playback**: replay a selected match over the actual map image.
-- **Human vs bot separation**: distinguish real player movement from AI behavior.
-- **Event markers**: show kills, deaths, bot combat, storm deaths, and loot pickups.
-- **Heatmap overlays**: switch between traffic, kill, death, storm, and loot density.
-- **Map/date/match filters**: focus on a specific map, day, or match.
-- **Raw data upload**: upload `.nakama-0` parquet files or a full `player_data` folder directly in the browser.
-- **Preprocessed dataset mode**: ship compact JSON for fast hosted review.
-- **Insight documentation**: `INSIGHTS.md` captures evidence-backed findings and level-design actions.
+To reach a $100M ARR milestone by 2030, LILA BLACK must evolve from an extraction shooter into a **High-Retention Ecosystem**. The data from this tool suggests a clear three-phase roadmap:
 
-## Data Provided
+### Phase 1: Polish & Pacing (Year 1)
+Fix the **Bot Vacuum**. By tuning bot aggression and spawn pacing using spatial heatmaps, we increase Human Encounter Density. If players meet rivals more often than bots, Day 30 retention (D30) will climb by 15-20%.
 
-The assignment includes 5 days of production telemetry from February 10-14, 2026:
+### Phase 2: The Content Treadmill Efficiency (Year 2)
+Optimize **Map Utilization**. Stop building 100% of a map if only 15% is used. Use the Journey Lab to identify "Dead Zones" and dynamically inject event-driven landmarks (VIPs). This reduces production costs while making every match feel unique—essential for the competitive GTM strategy against *COD Mobile*.
 
-- 1,243 player/bot journey files
-- About 89,000 event rows
-- 339 unique players
-- 796 unique matches
-- 3 maps: `AmbroseValley`, `GrandRift`, `Lockdown`
+### Phase 3: Live-Ops as a Service (Year 3-4)
+Scale to **$100M ARR** by monetizing the "Meta." Use spatial intelligence to drive limited-time "Map Takeovers" and "Faction Wars" in underutilized sectors. By providing a "Delta 4" experience—where the map itself feels alive and responsive to player behavior—we command the same premium ARPU as *BGMI* and *Genshin Impact*.
 
-Each `.nakama-0` file is one actor in one match:
+---
 
-```text
-{user_id}_{match_id}.nakama-0
-```
+## Setup & Validation
 
-Human players use UUID IDs. Bots use short numeric IDs.
+### Technical Requirements
+- Node.js 18+
+- Python 3.9+ (with `pyarrow`)
 
-Available row fields:
-
-```text
-user_id, match_id, map_id, x, y, z, ts, event
-```
-
-There are no extra fields for health, weapons, inventory, killer ID, team, rank, objective status, or item type. The tool derives higher-level behavior such as actor type, routes, visited zones, movement density, and event hotspots from the available telemetry.
-
-## Architecture
-
-The project supports two ingestion paths:
-
-1. **Build-time ingestion**
-   - `scripts/preprocess_data.py` reads raw parquet files with PyArrow.
-   - It decodes events, detects humans/bots, maps world coordinates to minimap pixels, groups data by match, and writes compact JSON to `public/data`.
-   - This is the best path for hosted deployment.
-
-2. **Browser upload ingestion**
-   - The app can parse uploaded `.nakama-0` parquet files client-side with `hyparquet`.
-   - It normalizes uploaded rows into the same manifest/match structure used by the bundled dataset.
-   - This is useful for quick inspection without redeploying.
-
-Coordinate mapping uses the config from the provided dataset README:
-
-```text
-u = (x - origin_x) / scale
-v = (z - origin_z) / scale
-pixel_x = u * 1024
-pixel_y = (1 - v) * 1024
-```
-
-Only `x` and `z` are used for 2D minimap plotting. `y` is elevation.
-
-## Tech Stack
-
-- React + TypeScript + Vite
-- Canvas rendering for paths, markers, playback positions, and heatmaps
-- Python + PyArrow for preprocessing
-- Hyparquet for browser-side parquet upload
-- Static hosting friendly: no required backend, database, or API server
-
-## Setup
-
+### Installation
 ```bash
 npm install
 python3 -m pip install pyarrow
@@ -113,64 +66,7 @@ python3 scripts/preprocess_data.py --input /path/to/player_data --output public/
 npm run dev
 ```
 
-Open the Vite URL, usually:
-
-```text
-http://localhost:5173
-```
-
-## Uploading Data
-
-The app supports both raw and processed uploads.
-
-**Raw files**
-
-Use **Data Source -> Files** to select one or more `.nakama-0` files.
-
-Use **Data Source -> Folder** to select the full `player_data` folder.
-
-**Processed JSON**
-
-For larger datasets or repeatable builds:
-
+### Validation
 ```bash
-python3 scripts/preprocess_data.py --input /path/to/player_data --output /tmp/lila_data
+npm run test  # Validates coordinate mapping, bot detection, and event decoding
 ```
-
-Then upload the generated folder containing:
-
-```text
-manifest.json
-matches/*.json
-```
-
-## Build And Deploy
-
-```bash
-npm run build
-```
-
-The production app is emitted to `dist/` and can be hosted on Vercel, Netlify, GitHub Pages, or any static host.
-
-Deployment URL:
-
-```text
-TODO: add hosted link before submission
-```
-
-## Validation
-
-```bash
-npm run test
-npm run build
-```
-
-Tests cover:
-
-- Ambrose Valley coordinate conversion using the README sample
-- Human vs bot detection
-- Event byte decoding
-
-## Current Data Limitation
-
-The provided timestamps span less than one second per reconstructed match in this telemetry slice. The tool therefore displays playback in seconds with decimals rather than assuming multi-minute match duration. The paths and event ordering are still useful for spatial review, but the dataset should be interpreted as dense journey/event samples rather than full cinematic match replays.

@@ -197,6 +197,24 @@ Before answering or acting on the current selected user/player, call get_state a
 Use the available tools whenever the answer depends on current app state or match data. Be concise, specific, and mention visible state changes you made.
 If a tool fails because no match is loaded, ask the user to load or select a match.`;
 
+const SUGGESTION_PROMPTS = [
+  "Summarize the selected player's route and key events.",
+  "Where did this player spend the most time?",
+  "Show me the next death or danger event on the timeline.",
+  "Compare this route against the kills heatmap.",
+  "What happened near the current selected player?",
+  "Find the first loot cluster for this player.",
+  "Switch to the deaths layer and explain the hotspots.",
+  "Is this route more exposed or safe based on the map?",
+  "Jump to the most important combat moment.",
+  "What terrain or landmarks shape this route?",
+  "Give me a level-design read on this match.",
+  "Find unusual movement or idle behavior.",
+  "Show only human routes and summarize the pattern.",
+  "Show only bot routes and summarize the pattern.",
+  "What should I inspect next in this match?",
+];
+
 export function AIChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -206,6 +224,7 @@ export function AIChat() {
   const [tempKey, setTempKey] = useState("");
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  const [suggestions] = useState(() => shufflePrompts(SUGGESTION_PROMPTS).slice(0, 3));
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -250,11 +269,10 @@ export function AIChat() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const prompt = inputValue.trim();
+  const submitPrompt = async (prompt: string) => {
     if (!prompt) return;
     if (!apiKey) {
+      setTempKey("");
       setIsApiKeyModalOpen(true);
       return;
     }
@@ -282,6 +300,11 @@ export function AIChat() {
         setFocusMessageId(null);
       }, 800);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void submitPrompt(inputValue.trim());
   };
 
   return (
@@ -316,8 +339,22 @@ export function AIChat() {
             )}
           </div>
         ))}
-        {messages.length === 0 && (
-          <div className="aiEmptyState">Ask Gemini about the map...</div>
+        {messages.length === 0 && !isThinking && (
+          <div className="aiStarter">
+            <div className="aiEmptyState">Ask Gemini about the map...</div>
+            <div className="aiSuggestionGrid" aria-label="Suggested prompts">
+              {suggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  className="aiSuggestionButton"
+                  type="button"
+                  onClick={() => void submitPrompt(suggestion)}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {isThinking && (
           <div className="aiMessageRow assistant">
@@ -505,4 +542,8 @@ function formatToolDetails(message: ChatMessage) {
     args: message.toolArgs ?? {},
     result: message.toolResult,
   }, null, 2);
+}
+
+function shufflePrompts(prompts: string[]) {
+  return [...prompts].sort(() => Math.random() - 0.5);
 }

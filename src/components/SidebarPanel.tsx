@@ -16,6 +16,7 @@ export interface SidebarPanelProps {
   onDateChange: (value: string) => void;
   onQueryChange: (value: string) => void;
   onReset: () => void;
+  onPreload: () => void;
   onSelectMatch: (key: string) => void;
   onToggleCollapsed: () => void;
   isMobileSheet?: boolean;
@@ -35,6 +36,7 @@ export function SidebarPanel({
   onDateChange,
   onQueryChange,
   onReset,
+  onPreload,
   onSelectMatch,
   onToggleCollapsed,
   isMobileSheet,
@@ -42,6 +44,7 @@ export function SidebarPanel({
   onDeleteMatch,
 }: SidebarPanelProps) {
   const [activeTab, setActiveTab] = useState<"Matches" | "AI">("Matches");
+  const [showCalendar, setShowCalendar] = useState(false);
 
   const isCollapsed = isMobileSheet ? false : collapsed;
   const className = isMobileSheet ? "mobileSheet" : (isCollapsed ? "sidebar collapsed" : "sidebar");
@@ -78,11 +81,13 @@ export function SidebarPanel({
           </div>
         )}
         <div className="sidebarActions">
-          {!isCollapsed && selectedPlayerId && onDeleteMatch && (
-            <button className="sidebarIconButton danger" type="button" aria-label="Delete" data-tooltip="Delete" onClick={onDeleteMatch}>
-              <Trash2 size={15} />
-            </button>
-          )}
+          <span className="sidebarActionSlot">
+            {!isCollapsed && selectedPlayerId && onDeleteMatch && (
+              <button className="sidebarIconButton danger" type="button" aria-label="Delete" data-tooltip="Delete" onClick={onDeleteMatch}>
+                <Trash2 size={15} />
+              </button>
+            )}
+          </span>
           {!isMobileSheet && (
             <button
               className="sidebarIconButton"
@@ -100,6 +105,8 @@ export function SidebarPanel({
         !manifest ? (
           <div className="sidebarEmptyState">
             <p>Drag and drop <strong>.nakama-0</strong> files or a folder anywhere to start.</p>
+            <div className="emptyStateOr">or</div>
+            <button className="preloadButton" type="button" onClick={onPreload}>Preload Bundled Data</button>
           </div>
         ) : (
           <>
@@ -107,16 +114,34 @@ export function SidebarPanel({
               <div className="matchSearchTools">
                 <label className="searchBox">
                   <Search size={14} />
-                  <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search" />
+                  <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search matches..." />
                 </label>
-                <label className="dateControl">
-                  <CalendarDays size={14} />
-                  <span>{selectedDate === "all" ? "All dates" : formatDateLabel(selectedDate)}</span>
-                  <select value={selectedDate} onChange={(event) => onDateChange(event.target.value)} aria-label="Date filter">
-                    <option value="all">All dates</option>
-                    {manifest?.dates.map((date) => <option key={date} value={date}>{formatDateLabel(date)}</option>)}
-                  </select>
-                </label>
+                
+                <div className="dateControlWrapper">
+                  <button 
+                    className="dateControl" 
+                    type="button" 
+                    onClick={() => setShowCalendar(!showCalendar)}
+                  >
+                    <CalendarDays size={14} />
+                    <span>{selectedDate === "all" ? "All dates" : formatDateLabel(selectedDate)}</span>
+                  </button>
+
+                  {showCalendar && (
+                    <div className="calendarPopover">
+                      <div className="calendarPopoverHeader">
+                        <span>Select Date</span>
+                        <button onClick={() => { onDateChange("all"); setShowCalendar(false); }}>Clear</button>
+                      </div>
+                      <CalendarHeatmap 
+                        dates={manifest.dates} 
+                        counts={manifest.stats.dates} 
+                        selectedDate={selectedDate} 
+                        onDateChange={(d) => { onDateChange(d); setShowCalendar(false); }} 
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="sidebarMatchList">
@@ -158,5 +183,43 @@ export function SidebarPanel({
         )
       )}
     </aside>
+  );
+}
+
+function CalendarHeatmap({ 
+  dates, 
+  counts, 
+  selectedDate, 
+  onDateChange 
+}: { 
+  dates: string[], 
+  counts: Record<string, number>, 
+  selectedDate: string, 
+  onDateChange: (d: string) => void 
+}) {
+  const maxCount = Math.max(...Object.values(counts));
+  
+  const getColor = (count: number) => {
+    if (!count) return "var(--calendar-empty)";
+    const ratio = count / maxCount;
+    if (ratio < 0.25) return "var(--calendar-level-1)";
+    if (ratio < 0.5) return "var(--calendar-level-2)";
+    if (ratio < 0.75) return "var(--calendar-level-3)";
+    return "var(--calendar-level-4)";
+  };
+
+  return (
+    <div className="calendarHeatmapGrid">
+      {dates.map((date) => (
+        <button
+          key={date}
+          className={`calendarHeatmapCell ${selectedDate === date ? "selected" : ""}`}
+          style={{ backgroundColor: getColor(counts[date]) }}
+          onClick={() => onDateChange(date === selectedDate ? "all" : date)}
+          title={`${formatDateLabel(date)}: ${counts[date]} matches`}
+          type="button"
+        />
+      ))}
+    </div>
   );
 }

@@ -12,8 +12,7 @@ import { PlaybackPanel } from "./components/PlaybackPanel";
 import { EventInfoCard } from "./components/EventInfoCard";
 import { LegendPanel } from "./components/LegendPanel";
 
-// ... skipping to the render ...
-// NOTE: I am providing the replacement specifically around the topbar to insert the layers.
+const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
 
 export function App() {
   const [manifest, setManifest] = useState<Manifest | null>(null);
@@ -66,7 +65,7 @@ export function App() {
     setMatch(null);
     setTime(0);
     setPlaying(false);
-    fetch("/data/manifest.json")
+    fetch(assetUrl("data/manifest.json"))
       .then((response) => {
         if (!response.ok) throw new Error("Missing generated data. Run scripts/preprocess_data.py first.");
         return response.json();
@@ -82,8 +81,8 @@ export function App() {
   }, [applyManifest]);
 
   useEffect(() => {
-    loadBundledDataset();
-  }, [loadBundledDataset]);
+    // loadBundledDataset removed to allow blank start
+  }, []);
 
   const filteredMatches = useMemo(() => {
     if (!manifest) return [];
@@ -120,7 +119,7 @@ export function App() {
       }
       return;
     }
-    fetch(`/data/matches/${selectedMatchKey}.json`)
+    fetch(assetUrl(`data/matches/${selectedMatchKey}.json`))
       .then((response) => response.json())
       .then((payload: MatchPayload) => {
         setMatch(payload);
@@ -197,7 +196,7 @@ export function App() {
 
     Promise.all(missing.map(async (item) => {
       const payload = uploadedDataset?.matches.get(item.key) ??
-        await fetch(`/data/matches/${item.key}.json`).then((response) => response.ok ? response.json() as Promise<MatchPayload> : null).catch(() => null);
+        await fetch(assetUrl(`data/matches/${item.key}.json`)).then((response) => response.ok ? response.json() as Promise<MatchPayload> : null).catch(() => null);
       return [item.key, getPrimaryActorType(payload)] as const;
     })).then((entries) => {
       if (cancelled) return;
@@ -563,6 +562,7 @@ export function App() {
         onDateChange={setSelectedDate}
         onQueryChange={setQuery}
         onReset={handleResetWorkspace}
+        onPreload={loadBundledDataset}
         onSelectMatch={setSelectedMatchKey}
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
         onDeleteMatch={handleDeleteMatch}
@@ -583,6 +583,7 @@ export function App() {
             onDateChange={setSelectedDate}
             onQueryChange={setQuery}
             onReset={handleResetWorkspace}
+            onPreload={loadBundledDataset}
             onSelectMatch={setSelectedMatchKey}
             onToggleCollapsed={() => {}}
             isMobileSheet={true}
@@ -631,7 +632,7 @@ export function App() {
           {mapImage ? (
             <>
               <div className="mapContent" style={mapTransform} aria-label={`${selectedMap} minimap`}>
-                <img className="minimap" src={`/minimaps/${mapImage}`} alt="" draggable={false} onLoad={draw} />
+                <img className="minimap" src={assetUrl(`minimaps/${mapImage}`)} alt="" draggable={false} onLoad={draw} />
                 <canvas ref={canvasRef} className="overlay" />
               </div>
               <MapToolsPanel
