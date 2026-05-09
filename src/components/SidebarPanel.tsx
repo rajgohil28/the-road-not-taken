@@ -58,8 +58,15 @@ export function SidebarPanel({
       setShowCalendar(false);
       setShowFilter(false);
     };
+    const handleOpenAiTab = () => {
+      setActiveTab("AI");
+    };
     window.addEventListener("pointerdown", handleGlobalClick);
-    return () => window.removeEventListener("pointerdown", handleGlobalClick);
+    window.addEventListener("OPEN_AI_TAB", handleOpenAiTab as EventListener);
+    return () => {
+      window.removeEventListener("pointerdown", handleGlobalClick);
+      window.removeEventListener("OPEN_AI_TAB", handleOpenAiTab as EventListener);
+    };
   }, []);
 
   const isCollapsed = isMobileSheet ? false : collapsed;

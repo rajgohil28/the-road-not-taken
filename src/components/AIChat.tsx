@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage } from "../types";
 import type { AiToolName } from "../lib/aiTools";
 
@@ -228,6 +228,25 @@ export function AIChat() {
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ dataUrl: string }>) => {
+      const match = e.detail.dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (match) {
+        // @ts-expect-error global
+        window.pendingMapImage = {
+          inlineData: {
+            mimeType: match[1],
+            data: match[2],
+          },
+        };
+        setInputValue("What is happening in this area?");
+        window.dispatchEvent(new CustomEvent("OPEN_AI_TAB"));
+      }
+    };
+    window.addEventListener("ASK_AGENT_AREA", handler as EventListener);
+    return () => window.removeEventListener("ASK_AGENT_AREA", handler as EventListener);
+  }, []);
+
   useLayoutEffect(() => {
     const anchorId = activeTurnId ?? focusMessageId;
     if (!anchorId) return;
@@ -404,7 +423,18 @@ async function runGeminiConversation(apiKey: string, messages: ChatMessage[], on
   const contents = toGeminiContents(messages);
   const latestUserContent = [...contents].reverse().find((content) => content.role === "user");
   const latestPrompt = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
-  const mapImage = shouldAttachMapImage(latestPrompt) ? await captureCurrentMapImage() : null;
+  
+  let mapImage = null;
+  // @ts-expect-error global
+  if (window.pendingMapImage) {
+    // @ts-expect-error global
+    mapImage = window.pendingMapImage;
+    // @ts-expect-error global
+    window.pendingMapImage = null;
+  } else if (shouldAttachMapImage(latestPrompt)) {
+    mapImage = await captureCurrentMapImage();
+  }
+
   if (latestUserContent && mapImage) {
     latestUserContent.parts.push(
       mapImage,

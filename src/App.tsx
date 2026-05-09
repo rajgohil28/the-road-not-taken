@@ -44,7 +44,7 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const heatmapCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null }>({ key: "", canvas: null });
   const mapShellRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
+  const dragRef = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number; xPercent?: number; yPercent?: number } | null>(null);
   const timelineDragRef = useRef<number | null>(null);
   const compassDragRef = useRef<number | null>(null);
   const compassFrameRef = useRef<number | null>(null);
@@ -509,8 +509,17 @@ export function App() {
     setShowLayerPanel(false);
     setShowLegendPanel(false);
 
+    let xPercent = -1;
+    let yPercent = -1;
+    const mapContent = mapShellRef.current?.querySelector('.mapContent') as HTMLElement;
+    if (mapContent) {
+      const rect = mapContent.getBoundingClientRect();
+      xPercent = (event.clientX - rect.left) / rect.width;
+      yPercent = (event.clientY - rect.top) / rect.height;
+    }
+
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: mapView.x, originY: mapView.y };
+    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: mapView.x, originY: mapView.y, xPercent, yPercent };
   }, [mapView.x, mapView.y]);
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
@@ -522,7 +531,16 @@ export function App() {
     }));
   }, [constrainMapView]);
   const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+    const drag = dragRef.current;
+    if (drag?.pointerId === event.pointerId) {
+      const dist = Math.hypot(event.clientX - drag.x, event.clientY - drag.y);
+      if (dist < 5 && drag.xPercent !== undefined && drag.xPercent >= 0 && drag.yPercent !== undefined) {
+        setMapPin({ x: drag.xPercent, y: drag.yPercent });
+      } else if (dist < 5) {
+        setMapPin(null);
+      }
+      dragRef.current = null;
+    }
   }, []);
   const scrubTimelineFromPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!duration) return;
@@ -550,6 +568,7 @@ export function App() {
   }, []);
 
   const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
+  const [mapPin, setMapPin] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const keys = new Set<string>();
@@ -615,6 +634,38 @@ export function App() {
       cancelAnimationFrame(animationFrameId);
     };
   }, [constrainMapView]);
+
+  const handleAskAgentArea = useCallback(() => {
+    if (!mapPin || !canvasRef.current) return;
+    const overlay = canvasRef.current;
+    const bgImg = document.querySelector(".minimap") as HTMLImageElement;
+    if (!bgImg || !bgImg.complete) return;
+
+    const cropSize = 512;
+    const canvas = document.createElement("canvas");
+    canvas.width = cropSize;
+    canvas.height = cropSize;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Draw solid background
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, cropSize, cropSize);
+
+    // Calculate crop centers based on natural width for img and canvas width for overlay
+    const cxImg = mapPin.x * bgImg.naturalWidth;
+    const cyImg = mapPin.y * bgImg.naturalHeight;
+    ctx.drawImage(bgImg, cxImg - cropSize / 2, cyImg - cropSize / 2, cropSize, cropSize, 0, 0, cropSize, cropSize);
+
+    const cxOverlay = mapPin.x * overlay.width;
+    const cyOverlay = mapPin.y * overlay.height;
+    ctx.drawImage(overlay, cxOverlay - cropSize / 2, cyOverlay - cropSize / 2, cropSize, cropSize, 0, 0, cropSize, cropSize);
+
+    const dataUrl = canvas.toDataURL("image/png");
+    window.dispatchEvent(new CustomEvent("ASK_AGENT_AREA", { detail: { dataUrl } }));
+    setSidebarCollapsed(false);
+    setMapPin(null);
+  }, [mapPin]);
 
   return (
     <main 
@@ -719,6 +770,18 @@ export function App() {
               <div className="mapContent" style={mapTransform} aria-label={`${selectedMap} minimap`}>
                 <img className="minimap" src={assetUrl(`minimaps/${mapImage}`)} alt="" draggable={false} onLoad={draw} />
                 <canvas ref={canvasRef} className="overlay" />
+                {mapPin && (
+                  <div 
+                    className="mapPinContainer" 
+                    style={{ left: `${mapPin.x * 100}%`, top: `${mapPin.y * 100}%`, transform: `translate(-50%, -50%) rotate(${-mapView.rotation}deg) scale(${1 / mapView.zoom})` }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <div className="mapPinDot" />
+                    <button className="mapPinAskAgent" onClick={(e) => { e.stopPropagation(); handleAskAgentArea(); }}>
+                      Ask Agent
+                    </button>
+                  </div>
+                )}
               </div>
               <MapToolsPanel
                 onZoomIn={() => updateZoom(0.18)}
