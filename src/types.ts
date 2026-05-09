@@ -19,6 +19,7 @@ export interface MatchSummary {
   humanCount: number;
   botCount: number;
   primaryActorType?: ActorType;
+  primaryUserId?: string;
   eventCounts: Record<string, number>;
   pathPointCount: number;
 }

@@ -40,6 +40,16 @@ export function LegendPanel({ onClose }: LegendPanelProps) {
       </div>
 
       <div className="legendSection">
+        <h4>AI Agent Tools</h4>
+        <ul className="legendHelpText" style={{ margin: 0, paddingLeft: "16px" }}>
+          <li><strong>Map Control:</strong> Pan, zoom, rotate, switch layers.</li>
+          <li><strong>Match Analysis:</strong> Search matches, scrub timeline.</li>
+          <li><strong>Player Tracking:</strong> Trace routes, summarize events.</li>
+          <li><strong>Visual Reasoning:</strong> Analyzes map screenshots.</li>
+        </ul>
+      </div>
+
+      <div className="legendSection">
         <h4>Upload</h4>
         <p className="legendHelpText">
           Drag and drop your <strong>.nakama-0</strong> files or a folder anywhere on the screen to load them into the application.

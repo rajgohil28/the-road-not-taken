@@ -29,8 +29,10 @@ export function formatDateLabel(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-export function formatMatchLabel(item: MatchSummary, actorType = item.primaryActorType) {
-  return `${item.id.replace(".nakama-0", "").slice(0, 8)} · ${formatActorType(actorType)} player`;
+export function formatMatchLabel(item: MatchSummary) {
+  const shortId = item.id.replace(".nakama-0", "").slice(0, 8);
+  const playerLabel = item.primaryUserId ? item.primaryUserId.slice(0, 8) : "Unknown";
+  return `${shortId} · ${playerLabel}`;
 }
 
 export function formatActorType(actorType?: ActorType) {

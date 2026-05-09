@@ -341,7 +341,7 @@ export function AIChat() {
         ))}
         {messages.length === 0 && !isThinking && (
           <div className="aiStarter">
-            <div className="aiEmptyState">Ask Gemini about the map...</div>
+            <div className="aiEmptyState">Ask Agent about the map...</div>
             <div className="aiSuggestionGrid" aria-label="Suggested prompts">
               {suggestions.map((suggestion) => (
                 <button
@@ -363,17 +363,20 @@ export function AIChat() {
         )}
       </div>
 
-      <form className="aiChatInputArea" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          placeholder="Message Gemini..."
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onFocus={handleInputFocus}
-          disabled={isThinking}
-        />
-        <button type="submit" disabled={!inputValue.trim() || isThinking}>Send</button>
-      </form>
+      <div className="aiChatFooter">
+        <form className="aiChatInputArea" onSubmit={handleSubmit}>
+          <input
+            type="text"
+            placeholder="Message Agent..."
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onFocus={handleInputFocus}
+            disabled={isThinking}
+          />
+          <button type="submit" disabled={!inputValue.trim() || isThinking}>Send</button>
+        </form>
+        <div className="aiPoweredBy">Agent is powered by Gemini</div>
+      </div>
 
       {isApiKeyModalOpen && (
         <div className="apiKeyModalOverlay">

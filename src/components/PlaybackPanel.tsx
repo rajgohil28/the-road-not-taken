@@ -119,10 +119,10 @@ export function PlaybackPanel({
             <SkipForward size={18} />
           </button>
         </div>
-        <label className="speedControl">
+        <label className={`speedControl ${!hasMatch ? "disabled" : ""}`}>
           <Gauge size={14} />
           <span>{playbackSpeed.toFixed(1)}x</span>
-          <select value={playbackSpeed} onChange={(e) => onSpeedChange(Number(e.target.value))}>
+          <select value={playbackSpeed} onChange={(e) => onSpeedChange(Number(e.target.value))} disabled={!hasMatch}>
             {SPEED_OPTIONS.map((speed) => <option key={speed} value={speed}>{speed.toFixed(1)}x</option>)}
           </select>
         </label>

@@ -24,6 +24,7 @@ export function App() {
   const [selectedDate, setSelectedDate] = useState("all");
   const [selectedMatchKey, setSelectedMatchKey] = useState("");
   const [query, setQuery] = useState("");
+  const [actorFilter, setActorFilter] = useState<"all" | "human" | "bot">("all");
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
@@ -55,7 +56,12 @@ export function App() {
     const first = data.matches[0];
     if (first) {
       setSelectedMap(first.mapId);
-      setSelectedDate(first.date);
+      const validDates = data.dates.filter(d => d !== "uploaded").sort();
+      if (validDates.length > 0) {
+        setSelectedDate(validDates[validDates.length - 1]);
+      } else {
+        setSelectedDate("all");
+      }
       setSelectedMatchKey(first.key);
     }
   }, []);
@@ -90,9 +96,10 @@ export function App() {
     return manifest.matches
       .filter((item) => item.mapId === selectedMap)
       .filter((item) => selectedDate === "all" || item.date === selectedDate)
-      .filter((item) => !normalized || item.id.toLowerCase().includes(normalized) || item.key.toLowerCase().includes(normalized))
+      .filter((item) => actorFilter === "all" || item.primaryActorType === actorFilter)
+      .filter((item) => !normalized || item.id.toLowerCase().includes(normalized) || item.key.toLowerCase().includes(normalized) || (item.primaryUserId && item.primaryUserId.toLowerCase().includes(normalized)))
       .sort((a, b) => b.durationSec - a.durationSec);
-  }, [manifest, query, selectedDate, selectedMap]);
+  }, [manifest, query, selectedDate, selectedMap, actorFilter]);
 
   useEffect(() => {
     if (!filteredMatches.length) {
@@ -224,6 +231,24 @@ export function App() {
     setIsDragging(false);
   }, []);
 
+  const handleFilesSelected = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    const allFiles = [...uploadedFiles, ...files];
+    setUploadedFiles(allFiles);
+    setUploadStatus(`Reading ${allFiles.length} files...`);
+    try {
+      const dataset = await parseUploadedDataset(allFiles);
+      setUploadedDataset(dataset);
+      applyManifest(dataset.manifest);
+      setMatch(null);
+      setTime(0);
+      setPlaying(false);
+      setUploadStatus(`Upload loaded: ${dataset.manifest.matches.length} matches.`);
+    } catch (error) {
+      setUploadStatus(error instanceof Error ? error.message : "Could not read dataset.");
+    }
+  }, [applyManifest, uploadedFiles]);
+
   const handleDrop = useCallback(async (event: React.DragEvent) => {
     event.preventDefault();
     setIsDragging(false);
@@ -255,22 +280,8 @@ export function App() {
       files = Array.from(event.dataTransfer.files);
     }
 
-    if (!files.length) return;
-    const allFiles = [...uploadedFiles, ...files];
-    setUploadedFiles(allFiles);
-    setUploadStatus(`Reading ${allFiles.length} dropped files...`);
-    try {
-      const dataset = await parseUploadedDataset(allFiles);
-      setUploadedDataset(dataset);
-      applyManifest(dataset.manifest);
-      setMatch(null);
-      setTime(0);
-      setPlaying(false);
-      setUploadStatus(`Upload loaded: ${dataset.manifest.matches.length} matches.`);
-    } catch (error) {
-      setUploadStatus(error instanceof Error ? error.message : "Could not read dropped dataset.");
-    }
-  }, [applyManifest, uploadedFiles]);
+    void handleFilesSelected(files);
+  }, [handleFilesSelected]);
 
   const selectedSummary = useMemo(
     () => manifest?.matches.find((item) => item.key === selectedMatchKey),
@@ -278,13 +289,14 @@ export function App() {
   );
 
   const duration = match?.durationSec ?? selectedSummary?.durationSec ?? 0;
+  const effectivePlayerId = selectedPlayerId || match?.participants[0]?.userId || "";
   const selectedParticipant = useMemo(
-    () => match?.participants.find((participant) => participant.userId === selectedPlayerId) ?? null,
-    [match, selectedPlayerId],
+    () => match?.participants.find((participant) => participant.userId === effectivePlayerId) ?? null,
+    [match, effectivePlayerId],
   );
   const selectedEvents = useMemo(
-    () => match?.events.filter((event) => !selectedPlayerId || event.userId === selectedPlayerId) ?? [],
-    [match, selectedPlayerId],
+    () => match?.events.filter((event) => !effectivePlayerId || event.userId === effectivePlayerId) ?? [],
+    [match, effectivePlayerId],
   );
 
   useEffect(() => {
@@ -294,7 +306,7 @@ export function App() {
       selectedMap,
       selectedDate,
       selectedMatchKey,
-      selectedPlayerId,
+      selectedPlayerId: effectivePlayerId,
       heatmap,
       time,
       duration,
@@ -394,11 +406,11 @@ export function App() {
     ctx.clearRect(0, 0, rect.width, rect.height);
     const scale = rect.width / MAP_SIZE;
     drawCachedHeatmap(ctx, match, heatmap, scale, toggles, rect.width, rect.height, ratio, heatmapCacheRef);
-    const participantsToDraw = selectedParticipant ? [selectedParticipant] : match.participants;
+    const participantsToDraw = selectedParticipant ? [selectedParticipant] : (match.participants.length ? [match.participants[0]] : []);
     if (toggles.paths) drawPaths(ctx, participantsToDraw, time, scale, toggles);
-    if (toggles.events) drawEvents(ctx, selectedPlayerId ? selectedEvents : match.events, time, scale, toggles);
+    if (toggles.events) drawEvents(ctx, effectivePlayerId ? selectedEvents : match.events, time, scale, toggles);
     drawCurrentPositions(ctx, participantsToDraw, time, scale, toggles);
-  }, [heatmap, match, selectedEvents, selectedParticipant, selectedPlayerId, time, toggles]);
+  }, [heatmap, match, selectedEvents, selectedParticipant, effectivePlayerId, time, toggles]);
 
   useEffect(() => {
     draw();
@@ -537,6 +549,73 @@ export function App() {
     event.stopPropagation();
   }, []);
 
+  const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const keys = new Set<string>();
+    let animationFrameId: number;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTagName = document.activeElement?.tagName.toUpperCase();
+      if (activeTagName === "INPUT" || activeTagName === "TEXTAREA") return;
+      const key = e.key.toLowerCase();
+      if (!keys.has(key)) {
+        keys.add(key);
+        setActiveKeys(new Set(keys));
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      if (keys.has(key)) {
+        keys.delete(key);
+        setActiveKeys(new Set(keys));
+      }
+    };
+
+    const handleBlur = () => {
+      keys.clear();
+      setActiveKeys(new Set());
+    };
+
+    const updateLoop = () => {
+      if (keys.size > 0) {
+        setMapView((value) => {
+          let { x, y, zoom } = value;
+          const panSpeed = 15;
+          const zoomSpeed = 0.04;
+          let changed = false;
+
+          if (keys.has("w")) { y += panSpeed; changed = true; }
+          if (keys.has("s")) { y -= panSpeed; changed = true; }
+          if (keys.has("a")) { x += panSpeed; changed = true; }
+          if (keys.has("d")) { x -= panSpeed; changed = true; }
+          if (keys.has("q")) { zoom = clamp(zoom - zoomSpeed, MIN_ZOOM, MAX_ZOOM); changed = true; }
+          if (keys.has("e")) { zoom = clamp(zoom + zoomSpeed, MIN_ZOOM, MAX_ZOOM); changed = true; }
+
+          if (changed) {
+            return constrainMapView({ ...value, x, y, zoom });
+          }
+          return value;
+        });
+      }
+      animationFrameId = requestAnimationFrame(updateLoop);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+
+    animationFrameId = requestAnimationFrame(updateLoop);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [constrainMapView]);
+
   return (
     <main 
       className={`app ${themeMode === "dark" ? "darkMode" : "lightMode"} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
@@ -556,13 +635,16 @@ export function App() {
         manifest={manifest}
         query={query}
         selectedDate={selectedDate}
+        actorFilter={actorFilter}
         selectedMatchKey={selectedMatchKey}
-        selectedPlayerId={selectedPlayerId}
+        selectedPlayerId={effectivePlayerId}
         matchActorTypes={matchActorTypes}
         onDateChange={setSelectedDate}
+        onActorFilterChange={setActorFilter}
         onQueryChange={setQuery}
         onReset={handleResetWorkspace}
         onPreload={loadBundledDataset}
+        onFilesSelected={(files) => void handleFilesSelected(Array.from(files))}
         onSelectMatch={setSelectedMatchKey}
         onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
         onDeleteMatch={handleDeleteMatch}
@@ -577,13 +659,16 @@ export function App() {
             manifest={manifest}
             query={query}
             selectedDate={selectedDate}
+            actorFilter={actorFilter}
             selectedMatchKey={selectedMatchKey}
-            selectedPlayerId={selectedPlayerId}
+            selectedPlayerId={effectivePlayerId}
             matchActorTypes={matchActorTypes}
             onDateChange={setSelectedDate}
+            onActorFilterChange={setActorFilter}
             onQueryChange={setQuery}
             onReset={handleResetWorkspace}
             onPreload={loadBundledDataset}
+            onFilesSelected={(files) => void handleFilesSelected(Array.from(files))}
             onSelectMatch={setSelectedMatchKey}
             onToggleCollapsed={() => {}}
             isMobileSheet={true}
@@ -673,6 +758,20 @@ export function App() {
         />
 
         <EventInfoCard event={hoveredEvent} />
+
+        <div className="keyboardOverlay">
+          <div className="keyboardOverlayHeader">Keyboard navigation</div>
+          <div className="keyboardRow">
+            <kbd className={activeKeys.has("q") ? "active" : ""}>Q</kbd>
+            <kbd className={activeKeys.has("w") ? "active" : ""}>W</kbd>
+            <kbd className={activeKeys.has("e") ? "active" : ""}>E</kbd>
+          </div>
+          <div className="keyboardRow">
+            <kbd className={activeKeys.has("a") ? "active" : ""}>A</kbd>
+            <kbd className={activeKeys.has("s") ? "active" : ""}>S</kbd>
+            <kbd className={activeKeys.has("d") ? "active" : ""}>D</kbd>
+          </div>
+        </div>
       </section>
     </main>
   );
