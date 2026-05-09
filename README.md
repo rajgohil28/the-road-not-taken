@@ -57,3 +57,8 @@ npm run dev
 ```bash
 npm run test  # Validates coordinate mapping, bot detection, and event decoding
 ```
+
+<br>
+<p align="center">
+  <sub><em>"The Road Not Taken is a poem where Robert Frost uses two diverging roads as a metaphor for life choices and how the paths we choose shape who we become."</em></sub>
+</p>
