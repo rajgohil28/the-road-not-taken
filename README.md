@@ -2,7 +2,7 @@
 
 **LILA Journey Lab** is a high-fidelity map-intelligence workbench designed to transform raw LILA BLACK telemetry into dominant level-design and product strategies.
 
-<video src="Trailer.mp4" controls="controls" muted="muted" width="100%"></video>
+https://github.com/user-attachments/assets/1099cb4d-3501-40c1-b631-e460cf692d7f
 
 ---
 
