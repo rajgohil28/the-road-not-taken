@@ -391,7 +391,9 @@ export function App() {
     const canvas = canvasRef.current;
     if (!canvas || !match) return;
     const rect = { width: canvas.clientWidth, height: canvas.clientHeight };
-    const ratio = window.devicePixelRatio || 1;
+    const baseRatio = window.devicePixelRatio || 1;
+    // Increase internal canvas resolution based on zoom for crisp lines, capped at 6x to save memory
+    const ratio = Math.min(baseRatio * mapView.zoom, 6);
     const targetWidth = Math.round(rect.width * ratio);
     const targetHeight = Math.round(rect.height * ratio);
 
@@ -402,32 +404,15 @@ export function App() {
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    
-    // Clear whole canvas at base transform
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Calculate map origin (center of canvas)
-    const cx = rect.width / 2;
-    const cy = rect.height / 2;
-
-    // Apply exact camera transform
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0); // Base retina scale
-    ctx.translate(cx + mapView.x, cy + mapView.y); // Pan
-    ctx.rotate((mapView.rotation * Math.PI) / 180); // Rotate
-    ctx.scale(mapView.zoom, mapView.zoom); // Zoom
-    ctx.translate(-cx, -cy); // Move origin back to top-left of the map box
-
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
     const scale = rect.width / MAP_SIZE;
-    
-    // Pass base ratio to heatmap so it caches at screen res, then we just draw it scaled
     drawCachedHeatmap(ctx, match, heatmap, scale, toggles, rect.width, rect.height, ratio, heatmapCacheRef);
-    
     const participantsToDraw = selectedParticipant ? [selectedParticipant] : (match.participants.length ? [match.participants[0]] : []);
     if (toggles.paths) drawPaths(ctx, participantsToDraw, time, scale, toggles, mapView.zoom);
     if (toggles.events) drawEvents(ctx, effectivePlayerId ? selectedEvents : match.events, time, scale, toggles, mapView.zoom);
     drawCurrentPositions(ctx, participantsToDraw, time, scale, toggles, mapView.zoom);
-  }, [heatmap, match, selectedEvents, selectedParticipant, effectivePlayerId, time, toggles, mapView.zoom, mapView.x, mapView.y, mapView.rotation]);
+  }, [heatmap, match, selectedEvents, selectedParticipant, effectivePlayerId, time, toggles, mapView.zoom]);
 
   useEffect(() => {
     draw();
@@ -688,19 +673,7 @@ export function App() {
 
     const cxOverlay = mapPin.x * overlay.width;
     const cyOverlay = mapPin.y * overlay.height;
-    
-    // Scale the crop size for the overlay so it matches the geographic coverage of the background image crop
-    const cropRatio = overlay.width / bgImg.naturalWidth;
-    const overlayCropSize = cropSize * cropRatio;
-
-    ctx.drawImage(
-      overlay, 
-      cxOverlay - overlayCropSize / 2, 
-      cyOverlay - overlayCropSize / 2, 
-      overlayCropSize, 
-      overlayCropSize, 
-      0, 0, cropSize, cropSize
-    );
+    ctx.drawImage(overlay, cxOverlay - cropSize / 2, cyOverlay - cropSize / 2, cropSize, cropSize, 0, 0, cropSize, cropSize);
 
     const dataUrl = canvas.toDataURL("image/png");
     window.dispatchEvent(new CustomEvent("ASK_AGENT_AREA", { detail: { dataUrl } }));
@@ -808,14 +781,14 @@ export function App() {
         >
           {mapImage ? (
             <>
-              <div className="mapContent" aria-label={`${selectedMap} minimap`}>
-                <img className="minimap" style={mapTransform} src={assetUrl(`minimaps/${mapImage}`)} alt="" draggable={false} onLoad={draw} />
+              <div className="mapContent" style={mapTransform} aria-label={`${selectedMap} minimap`}>
+                <img className="minimap" src={assetUrl(`minimaps/${mapImage}`)} alt="" draggable={false} onLoad={draw} />
                 <canvas ref={canvasRef} className="overlay" />
                 {mapPin && (
                   <div
                     key={`${mapPin.x}-${mapPin.y}`}
                     className="mapPinContainer"
-                    style={{ left: `calc(50% + ${mapView.x}px + ${(mapPin.x - 0.5) * 100 * mapView.zoom}%)`, top: `calc(50% + ${mapView.y}px + ${(mapPin.y - 0.5) * 100 * mapView.zoom}%)`, transform: `translate(-50%, -50%) rotate(${-mapView.rotation}deg)` }}
+                    style={{ left: `${mapPin.x * 100}%`, top: `${mapPin.y * 100}%`, transform: `translate(-50%, -50%) rotate(${-mapView.rotation}deg) scale(${1 / mapView.zoom})` }}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
                     <div className="mapPinDot" />

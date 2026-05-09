@@ -134,11 +134,7 @@ export function drawCachedHeatmap(
   if (cacheRef.current.canvas) {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(
-      cacheRef.current.canvas, 
-      0, 0, cacheRef.current.canvas.width, cacheRef.current.canvas.height, 
-      0, 0, ctx.canvas.width, ctx.canvas.height
-    );
+    ctx.drawImage(cacheRef.current.canvas, 0, 0);
     ctx.restore();
   }
 }
