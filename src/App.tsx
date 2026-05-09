@@ -837,6 +837,10 @@ export function App() {
           onSpeedChange={setPlaybackSpeed}
         />
 
+        <div className="bottomThematicFooter">
+          "The Road Not Taken is a metaphor for life choices and how they shape who we become"
+        </div>
+
         <EventInfoCard event={hoveredEvent} />
 
         <div className="keyboardOverlay">
