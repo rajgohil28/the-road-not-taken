@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RotateCcw } from "lucide-react";
 import type { ActorType, HeatmapMode, JourneyEvent, Manifest, MatchPayload, Toggles } from "./types";
 import { MAP_SIZE, MIN_ZOOM, MAX_ZOOM, HEATMAP_OPTIONS } from "./constants";
 import { clamp, normalizeDegrees, shortestAngleDelta } from "./utils";
@@ -41,10 +42,44 @@ export function App() {
   const [mapView, setMapView] = useState({ zoom: 3, rotation: 0, x: 0, y: 0 });
   const [hoveredEvent, setHoveredEvent] = useState<JourneyEvent | null>(null);
   const [toggles, setToggles] = useState<Toggles>({ humans: true, bots: true, paths: true, events: true });
+  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const isTablet = windowSize.width > 768 && windowSize.width <= 1024;
+  const isMobile = windowSize.width <= 768;
+  const isPortrait = windowSize.height > windowSize.width;
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const heatmapCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement | null }>({ key: "", canvas: null });
   const mapShellRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number; xPercent?: number; yPercent?: number } | null>(null);
+  
+  // Multi-touch tracking
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const gestureStateRef = useRef({ zoom: 1, rotation: 0 });
+  const gestureRef = useRef<{
+    initialDistance: number;
+    initialAngle: number;
+    initialZoom: number;
+    initialRotation: number;
+    initialMidpoint: { x: number; y: number };
+    initialX: number;
+    initialY: number;
+  } | null>(null);
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    xPercent?: number;
+    yPercent?: number;
+  } | null>(null);
+
   const timelineDragRef = useRef<number | null>(null);
   const compassDragRef = useRef<number | null>(null);
   const compassFrameRef = useRef<number | null>(null);
@@ -500,52 +535,151 @@ export function App() {
       if (event.cancelable) {
         event.preventDefault();
       }
-      setMapView((value) => constrainMapView({ ...value, zoom: clamp(value.zoom + (event.deltaY < 0 ? 0.08 : -0.08), MIN_ZOOM, MAX_ZOOM) }));
+      // Support for trackpad pinch-to-zoom (ctrlKey) and smooth scroll zoom
+      const delta = event.deltaY;
+      const zoomFactor = event.ctrlKey ? 0.02 : 0.1;
+      const direction = delta < 0 ? 1 : -1;
+      const zoomDelta = direction * zoomFactor * (mapView.zoom / 4);
+      
+      setMapView((value) => constrainMapView({ 
+        ...value, 
+        zoom: clamp(value.zoom + zoomDelta, MIN_ZOOM, MAX_ZOOM) 
+      }));
     };
+
+    const onGestureStart = (event: any) => {
+      event.preventDefault();
+      gestureStateRef.current = { zoom: mapView.zoom, rotation: mapView.rotation };
+    };
+
+    const onGestureChange = (event: any) => {
+      event.preventDefault();
+      const { zoom, rotation } = gestureStateRef.current;
+      setMapView((value) => constrainMapView({
+        ...value,
+        zoom: clamp(zoom * event.scale, MIN_ZOOM, MAX_ZOOM),
+        rotation: normalizeDegrees(rotation + event.rotation)
+      }));
+    };
+
     shell.addEventListener("wheel", onWheel, { passive: false });
-    return () => shell.removeEventListener("wheel", onWheel);
-  }, [constrainMapView]);
+    shell.addEventListener("gesturestart", onGestureStart, { passive: false });
+    shell.addEventListener("gesturechange", onGestureChange, { passive: false });
+
+    return () => {
+      shell.removeEventListener("wheel", onWheel);
+      shell.removeEventListener("gesturestart", onGestureStart);
+      shell.removeEventListener("gesturechange", onGestureChange);
+    };
+  }, [constrainMapView, mapView.zoom, mapView.rotation]);
 
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     // Close panels on map interaction
     setShowLayerPanel(false);
     setShowLegendPanel(false);
 
-    let xPercent = -1;
-    let yPercent = -1;
-    const mapContent = mapShellRef.current?.querySelector('.mapContent') as HTMLElement;
-    if (mapContent) {
-      const rect = mapContent.getBoundingClientRect();
-      xPercent = (event.clientX - rect.left) / rect.width;
-      yPercent = (event.clientY - rect.top) / rect.height;
-    }
-
+    const pointers = pointersRef.current;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: mapView.x, originY: mapView.y, xPercent, yPercent };
-  }, [mapView.x, mapView.y]);
-  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    setMapView((value) => constrainMapView({
-      ...value,
-      x: drag.originX + event.clientX - drag.x,
-      y: drag.originY + event.clientY - drag.y,
-    }));
-  }, [constrainMapView]);
-  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (drag?.pointerId === event.pointerId) {
-      const dist = Math.hypot(event.clientX - drag.x, event.clientY - drag.y);
-      if (dist < 5 && drag.xPercent !== undefined && drag.xPercent >= 0 && drag.yPercent !== undefined) {
-        setMapPin({ x: drag.xPercent, y: drag.yPercent });
-        setMapPinButtonVisible(true);
-      } else if (dist < 5) {
-        setMapPin(null);
-        setMapPinButtonVisible(false);
+
+    if (pointers.size === 1) {
+      let xPercent = -1;
+      let yPercent = -1;
+      const mapContent = mapShellRef.current?.querySelector('.mapContent') as HTMLElement;
+      if (mapContent) {
+        const rect = mapContent.getBoundingClientRect();
+        xPercent = (event.clientX - rect.left) / rect.width;
+        yPercent = (event.clientY - rect.top) / rect.height;
       }
-      dragRef.current = null;
+      dragRef.current = { startX: event.clientX, startY: event.clientY, originX: mapView.x, originY: mapView.y, xPercent, yPercent };
+    } else if (pointers.size === 2) {
+      const pList = Array.from(pointers.values());
+      const distance = Math.hypot(pList[0].x - pList[1].x, pList[0].y - pList[1].y);
+      const angle = Math.atan2(pList[1].y - pList[0].y, pList[1].x - pList[0].x) * 180 / Math.PI;
+      const midpoint = { x: (pList[0].x + pList[1].x) / 2, y: (pList[0].y + pList[1].y) / 2 };
+      
+      gestureRef.current = {
+        initialDistance: distance,
+        initialAngle: angle,
+        initialZoom: mapView.zoom,
+        initialRotation: mapView.rotation,
+        initialMidpoint: midpoint,
+        initialX: mapView.x,
+        initialY: mapView.y
+      };
     }
-  }, []);
+  }, [mapView.x, mapView.y, mapView.zoom, mapView.rotation]);
+
+  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const pointers = pointersRef.current;
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointers.size === 2 && gestureRef.current) {
+      const g = gestureRef.current;
+      const pList = Array.from(pointers.values());
+      const distance = Math.hypot(pList[0].x - pList[1].x, pList[0].y - pList[1].y);
+      const angle = Math.atan2(pList[1].y - pList[0].y, pList[1].x - pList[0].x) * 180 / Math.PI;
+      const midpoint = { x: (pList[0].x + pList[1].x) / 2, y: (pList[0].y + pList[1].y) / 2 };
+      
+      const zoomScale = distance / g.initialDistance;
+      const newZoom = clamp(g.initialZoom * zoomScale, MIN_ZOOM, MAX_ZOOM);
+      
+      const angleDelta = angle - g.initialAngle;
+      const newRotation = normalizeDegrees(g.initialRotation + angleDelta);
+      
+      const midX = midpoint.x - g.initialMidpoint.x;
+      const midY = midpoint.y - g.initialMidpoint.y;
+      
+      setMapView((value) => constrainMapView({
+        ...value,
+        zoom: newZoom,
+        rotation: newRotation,
+        x: g.initialX + midX,
+        y: g.initialY + midY
+      }));
+    } else if (pointers.size === 1 && dragRef.current) {
+      const drag = dragRef.current;
+      setMapView((value) => constrainMapView({
+        ...value,
+        x: drag.originX + event.clientX - drag.startX,
+        y: drag.originY + event.clientY - drag.startY,
+      }));
+    }
+  }, [constrainMapView]);
+
+  const handlePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const pointers = pointersRef.current;
+    if (pointers.has(event.pointerId)) {
+      if (pointers.size === 1 && dragRef.current) {
+        const drag = dragRef.current;
+        const dist = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+        if (dist < 5 && drag.xPercent !== undefined && drag.xPercent >= 0 && drag.yPercent !== undefined) {
+          setMapPin({ x: drag.xPercent, y: drag.yPercent });
+          setMapPinButtonVisible(true);
+        } else if (dist < 5) {
+          setMapPin(null);
+          setMapPinButtonVisible(false);
+        }
+      }
+      
+      pointers.delete(event.pointerId);
+      if (pointers.size < 2) gestureRef.current = null;
+      if (pointers.size === 0) {
+        dragRef.current = null;
+      } else {
+        // Reset drag origin for remaining finger to avoid jumps
+        const remainingId = Array.from(pointers.keys())[0];
+        const p = pointers.get(remainingId)!;
+        dragRef.current = {
+          startX: p.x,
+          startY: p.y,
+          originX: mapView.x,
+          originY: mapView.y
+        };
+      }
+    }
+  }, [mapView.x, mapView.y]);
   const scrubTimelineFromPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!duration) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -843,19 +977,30 @@ export function App() {
 
         <EventInfoCard event={hoveredEvent} />
 
-        <div className="keyboardOverlay">
-          <div className="keyboardOverlayHeader">Keyboard navigation</div>
-          <div className="keyboardRow">
-            <kbd className={activeKeys.has("q") ? "active" : ""}>Q</kbd>
-            <kbd className={activeKeys.has("w") ? "active" : ""}>W</kbd>
-            <kbd className={activeKeys.has("e") ? "active" : ""}>E</kbd>
+        {isTablet && isPortrait && (
+          <div className="tabletLandscapePrompt">
+            <div className="promptContent">
+              <RotateCcw size={80} strokeWidth={1.5} className="rotateIcon" />
+              <p>Please switch to landscape mode for the best experience on tablet.</p>
+            </div>
           </div>
-          <div className="keyboardRow">
-            <kbd className={activeKeys.has("a") ? "active" : ""}>A</kbd>
-            <kbd className={activeKeys.has("s") ? "active" : ""}>S</kbd>
-            <kbd className={activeKeys.has("d") ? "active" : ""}>D</kbd>
+        )}
+
+        {!(isTablet || isMobile) && (
+          <div className="keyboardOverlay">
+            <div className="keyboardOverlayHeader">Keyboard navigation</div>
+            <div className="keyboardRow">
+              <kbd className={activeKeys.has("q") ? "active" : ""}>Q</kbd>
+              <kbd className={activeKeys.has("w") ? "active" : ""}>W</kbd>
+              <kbd className={activeKeys.has("e") ? "active" : ""}>E</kbd>
+            </div>
+            <div className="keyboardRow">
+              <kbd className={activeKeys.has("a") ? "active" : ""}>A</kbd>
+              <kbd className={activeKeys.has("s") ? "active" : ""}>S</kbd>
+              <kbd className={activeKeys.has("d") ? "active" : ""}>D</kbd>
+            </div>
           </div>
-        </div>
+        )}
       </section>
     </main>
   );

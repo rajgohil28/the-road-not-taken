@@ -2623,3 +2623,46 @@ body {
   background: #0a84ff;
   color: #ffffff;
 }
+
+.tabletLandscapePrompt {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  text-align: center;
+  padding: 40px;
+}
+
+.promptContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.promptContent .rotateIcon {
+  animation: rotatePrompt 3s infinite ease-in-out;
+  opacity: 0.9;
+}
+
+.promptContent p {
+  font-size: 24px;
+  font-weight: 500;
+  max-width: 320px;
+  margin: 0;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+@keyframes rotatePrompt {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(90deg); }
+  50% { transform: rotate(90deg); }
+  70% { transform: rotate(0deg); }
+  100% { transform: rotate(0deg); }
+}
